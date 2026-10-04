@@ -6,7 +6,7 @@
 import '@/global.css';
 
 import { Platform } from 'react-native';
-
+export const API_URL = 'https://unm-backend-production.up.railway.app';
 export const Colors = {
   light: {
     text: '#000000',
