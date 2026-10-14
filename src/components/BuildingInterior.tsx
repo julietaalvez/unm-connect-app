@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   NativeScrollEvent,
@@ -12,7 +12,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
-import { AMENITIES, EDIFICIOS, NOTES, SCHEDULE } from '../data/edificios';
+import { AMENITIES, EDIFICIOS, NOTES, Piso, SCHEDULE } from '../data/edificios';
 import {
   Ruta,
   Ubicacion,
@@ -26,37 +26,54 @@ import {
   rutaToPath,
   typeLabel,
 } from '../lib/interior';
+import { Colores, useTema } from '../lib/tema';
+import HeaderMapa from './HeaderMapa';
 
 const FOTO = require('../../assets/images/daract2.png');
 
-const C = {
-  bg: '#ffffff',
-  panel2: '#e0edff',
-  elevated: '#b7d6ff',
-  border: '#e3edfb',
-  text: '#12213c',
-  dim: '#737a83',
-  accent: '#153396',
-  mapBg: '#e0edff',
-  mapAccent: '#2f6fe0',
-  busy: '#d68a3c',
-  busyBg: '#faf3ea',
-  free: '#2fa36b',
-  freeBg: '#eaf7f1',
-};
+const fillDe = (C: Colores) => ({
+  aula: { fill: C.aulaFill, stroke: C.aulaStroke, selFill: C.aulaSel, selStroke: C.aulaSelStroke },
+  bano: { fill: C.banoFill, stroke: C.banoStroke, selFill: C.banoSel, selStroke: C.banoSelStroke },
+  serv: { fill: C.servFill, stroke: C.servStroke, selFill: C.servSel, selStroke: C.servSelStroke },
+  muted: { fill: C.mutedFill, stroke: C.mutedStroke, selFill: C.mutedFill, selStroke: C.mutedStroke },
+});
 
-const FILL: Record<string, { fill: string; stroke: string; selFill: string; selStroke: string }> = {
-  aula: { fill: '#ffffff', stroke: '#a9c4ef', selFill: '#4f8ef7', selStroke: '#2f6fe0' },
-  bano: { fill: '#d8f3ec', stroke: '#4fae95', selFill: '#2f8f7c', selStroke: '#2fa36b' },
-  serv: { fill: '#fbeccb', stroke: '#c99a3f', selFill: '#8a6a2c', selStroke: '#d68a3c' },
-  muted: { fill: '#d3e3fb', stroke: '#b9cdf0', selFill: '#d3e3fb', selStroke: '#b9cdf0' },
-};
+function useEstilos() {
+  const { C } = useTema();
+  const s = useMemo(() => makeStyles(C), [C]);
+  return { C, s };
+}
 
 const LABEL_PX = 13; // tamaño de los nombres en pantalla, sin importar el zoom
+
+// Ajusta el viewBox al dibujo real (con un margen) para que no sobre espacio vacío
+function viewBoxAjustado(piso: Piso): string {
+  const PAD = 20; // margen; también deja lugar al círculo de "estás acá"
+  let x1 = Infinity;
+  let y1 = Infinity;
+  let x2 = -Infinity;
+  let y2 = -Infinity;
+  for (const sh of piso.shapes) {
+    x1 = Math.min(x1, sh.x);
+    y1 = Math.min(y1, sh.y);
+    x2 = Math.max(x2, sh.x + sh.w);
+    y2 = Math.max(y2, sh.y + sh.h);
+  }
+  for (const p of piso.points) {
+    x1 = Math.min(x1, p.x - PAD);
+    y1 = Math.min(y1, p.y - PAD);
+    x2 = Math.max(x2, p.x + PAD);
+    y2 = Math.max(y2, p.y + PAD);
+  }
+  if (!isFinite(x1)) return piso.viewBox; // por las dudas
+  return `${x1 - PAD} ${y1 - PAD} ${x2 - x1 + PAD * 2} ${y2 - y1 + PAD * 2}`;
+}
 
 type Props = { buildingId: string; onBack: () => void };
 
 export default function BuildingInterior({ buildingId, onBack }: Props) {
+  const { C, s } = useEstilos();
+  const FILL = fillDe(C);
   const ed = EDIFICIOS[buildingId];
   const { width: winW } = useWindowDimensions();
   const pisos = Object.keys(ed.floors);
@@ -72,10 +89,12 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
   const [mapW, setMapW] = useState(Math.max(280, Math.min(winW, 900) - 60));
 
   const scrollRef = useRef<ScrollView>(null);
+  const pantallaRef = useRef<ScrollView>(null);
   const scrollX = useRef(0);
 
   const piso = ed.floors[floor];
-  const [vx, vy, vw, vh] = piso.viewBox.split(' ').map(Number);
+  const viewBox = viewBoxAjustado(piso);
+  const [vx, vy, vw, vh] = viewBox.split(' ').map(Number);
   const svgW = mapW * zoom;
   const svgH = (svgW * vh) / vw;
   const fs = LABEL_PX / (svgW / vw); // tamaño de letra en unidades del plano
@@ -108,6 +127,8 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
   function elegirEspacio(id: string) {
     setSelId(id);
     setRuta(null);
+    // baja hasta la ficha del espacio
+    setTimeout(() => pantallaRef.current?.scrollToEnd({ animated: true }), 80);
   }
 
   function buscar(texto: string) {
@@ -128,18 +149,19 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
   function comoLlegar() {
     if (!forma) return;
     setRuta(calcularRuta(ed, mi, floor, forma, labelFor(forma.id) || forma.id));
+    // baja para ver los pasos de la ruta
+    setTimeout(() => pantallaRef.current?.scrollToEnd({ animated: true }), 80);
   }
 
   /* ---------------- UI ---------------- */
   return (
-    <ScrollView style={s.screen} contentContainerStyle={{ paddingBottom: 28 }}>
-      {/* barra superior */}
-      <View style={s.topbar}>
-        <Pressable onPress={onBack} style={s.backBtn} accessibilityLabel="Volver al campus">
-          <Text style={{ fontSize: 18, color: C.text }}>‹</Text>
-        </Pressable>
-        <Text style={s.title}>{ed.name}</Text>
-      </View>
+    <ScrollView
+      ref={pantallaRef}
+      style={s.screen}
+      contentContainerStyle={{ paddingBottom: 40 }}
+      contentInsetAdjustmentBehavior="never"
+    >
+      <HeaderMapa onBack={onBack} />
       <Text style={s.subtitle}>{ed.name} · Planos reales</Text>
 
       {/* buscador */}
@@ -149,7 +171,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
           value={query}
           onChangeText={buscar}
           placeholder="Buscar aula (ej: Aula 13)"
-          placeholderTextColor={C.dim}
+          placeholderTextColor={C.placeholder}
           style={s.searchInput}
         />
       </View>
@@ -158,7 +180,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
       <View style={s.tabs}>
         {pisos.map((f) => (
           <Pressable key={f} onPress={() => elegirPiso(f)} style={[s.tab, f === floor && s.tabActive]}>
-            <Text style={[s.tabText, f === floor && { color: '#fff' }]}>{f}</Text>
+            <Text style={[s.tabText, f === floor && { color: C.onAccent }]}>{f}</Text>
           </Pressable>
         ))}
       </View>
@@ -191,7 +213,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
                       }}
                     >
                       <View style={s.dot} />
-                      <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.accent, fontWeight: '600' }]}>{p.label}</Text>
+                      <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.pillTypeText, fontWeight: '600' }]}>{p.label}</Text>
                     </Pressable>
                   );
                 })}
@@ -221,7 +243,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
           onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => (scrollX.current = e.nativeEvent.contentOffset.x)}
           style={{ borderRadius: 14 }}
         >
-          <Svg width={svgW} height={svgH} viewBox={piso.viewBox}>
+          <Svg width={svgW} height={svgH} viewBox={viewBox}>
             {/* espacios */}
             <G>
               {piso.shapes.map((sh) => {
@@ -245,7 +267,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
             {/* íconos de baños / escaleras */}
             <G pointerEvents="none">
               {piso.icons.map((ic) =>
-                ic.ds.map((d, i) => <Path key={ic.forId + i} d={d} fill="rgba(18,33,60,.55)" />),
+                ic.ds.map((d, i) => <Path key={ic.forId + i} d={d} fill={C.icon} />),
               )}
             </G>
 
@@ -254,7 +276,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
               <Path
                 d={rutaToPath(ruta.points)}
                 fill="none"
-                stroke={C.mapAccent}
+                stroke={C.route}
                 strokeWidth={2.5}
                 strokeDasharray="6 5"
                 strokeLinecap="round"
@@ -280,10 +302,10 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
                 const y = (conClase ? sh.cy - fs * 0.35 : sh.cy) + fs * 0.35; // +0.35 = centrado vertical
                 return (
                   <G key={'t' + sh.id}>
-                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth={fs * 0.2} strokeLinejoin="round">
+                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill="none" stroke={C.halo} strokeWidth={fs * 0.2} strokeLinejoin="round">
                       {label}
                     </SvgText>
-                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill={C.text}>
+                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill={C.label}>
                       {label}
                     </SvgText>
                     {(conClase || tipo === 'aula') && (
@@ -339,6 +361,7 @@ function FichaEspacio({
   ruta: Ruta | null;
   onComoLlegar: () => void;
 }) {
+  const { C, s } = useEstilos();
   const tipo = classify(id);
   const label = labelFor(id) || id;
   const clase = SCHEDULE[id];
@@ -357,8 +380,8 @@ function FichaEspacio({
               <Text style={[s.pillText, { color: clase ? C.busy : C.free }]}>{clase ? 'Con clase' : 'Libre ahora'}</Text>
             </View>
           ) : (
-            <View style={[s.pill, { backgroundColor: 'rgba(21,51,150,.1)' }]}>
-              <Text style={[s.pillText, { color: C.accent }]}>{typeLabel(tipo)}</Text>
+            <View style={[s.pill, { backgroundColor: C.pillTypeBg }]}>
+              <Text style={[s.pillText, { color: C.pillTypeText }]}>{typeLabel(tipo)}</Text>
             </View>
           )}
         </View>
@@ -420,6 +443,7 @@ function FichaEspacio({
 }
 
 function Chip({ ic, txt, off }: { ic: string; txt: string; off?: boolean }) {
+  const { C, s } = useEstilos();
   return (
     <View style={[s.chip, off && { opacity: 0.35 }]}>
       <Text style={{ fontSize: 13 }}>{ic}</Text>
@@ -429,11 +453,8 @@ function Chip({ ic, txt, off }: { ic: string; txt: string; off?: boolean }) {
 }
 
 /* ---------- estilos ---------- */
-const s = StyleSheet.create({
+const makeStyles = (C: Colores) => StyleSheet.create({
   screen: { flex: 1, backgroundColor: C.bg },
-  topbar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 6 },
-  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7d9f5', alignItems: 'center', justifyContent: 'center', elevation: 3 },
-  title: { fontSize: 18, fontWeight: '700', color: C.text },
   subtitle: { fontSize: 11, color: C.dim, marginHorizontal: 18, marginBottom: 10 },
   search: { marginHorizontal: 18, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
   searchInput: { flex: 1, fontSize: 14, color: C.text, padding: 0 },
@@ -446,13 +467,13 @@ const s = StyleSheet.create({
   whereHeader: { fontSize: 10.5, color: C.dim, paddingHorizontal: 9, paddingTop: 7, paddingBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 },
   whereOpt: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 9 },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
-  mapWrap: { marginHorizontal: 18, backgroundColor: C.mapBg, borderWidth: 1, borderColor: '#c7d9f5', borderRadius: 22, padding: 12, paddingTop: 14 },
+  mapWrap: { marginHorizontal: 18, backgroundColor: C.mapBg, borderWidth: 1, borderColor: C.mapBorder, borderRadius: 22, padding: 12, paddingTop: 14 },
   floorLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
-  floorLabel: { fontSize: 11.5, fontWeight: '600', color: 'rgba(18,33,60,.55)' },
-  toast: { position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5, backgroundColor: '#fff', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, elevation: 6 },
-  toastText: { fontSize: 12, fontWeight: '600', color: C.accent },
+  floorLabel: { fontSize: 11.5, fontWeight: '600', color: C.floorLabel },
+  toast: { position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5, backgroundColor: C.toastBg, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, elevation: 6 },
+  toastText: { fontSize: 12, fontWeight: '600', color: C.toastText },
   zoomCtl: { position: 'absolute', right: 20, bottom: 20, gap: 8 },
-  zoomBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7d9f5', alignItems: 'center', justifyContent: 'center', elevation: 3 },
+  zoomBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, alignItems: 'center', justifyContent: 'center', elevation: 3 },
   zoomTxt: { fontSize: 22, color: C.text, lineHeight: 24 },
   info: { margin: 18, marginBottom: 0, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16 },
   infoEmpty: { color: C.dim, fontSize: 13, textAlign: 'center', padding: 20, lineHeight: 20 },
@@ -467,6 +488,6 @@ const s = StyleSheet.create({
   amenities: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, borderRadius: 20, paddingVertical: 5, paddingHorizontal: 10 },
   goBtn: { marginTop: 12, backgroundColor: C.accent, borderRadius: 14, padding: 14, alignItems: 'center' },
-  goBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  goBtnText: { color: C.onAccent, fontWeight: '700', fontSize: 14 },
   stepN: { width: 18, height: 18, borderRadius: 9, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
 });
