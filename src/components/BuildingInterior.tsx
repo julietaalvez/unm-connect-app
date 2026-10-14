@@ -1,0 +1,472 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Image,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+  useWindowDimensions,
+} from 'react-native';
+import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
+import { AMENITIES, EDIFICIOS, NOTES, SCHEDULE } from '../data/edificios';
+import {
+  Ruta,
+  Ubicacion,
+  buscarEspacio,
+  calcularRuta,
+  classify,
+  labelFor,
+  mostrarCartel,
+  pointById,
+  puntoInicial,
+  rutaToPath,
+  typeLabel,
+} from '../lib/interior';
+
+const FOTO = require('../../assets/images/daract2.png');
+
+const C = {
+  bg: '#ffffff',
+  panel2: '#e0edff',
+  elevated: '#b7d6ff',
+  border: '#e3edfb',
+  text: '#12213c',
+  dim: '#737a83',
+  accent: '#153396',
+  mapBg: '#e0edff',
+  mapAccent: '#2f6fe0',
+  busy: '#d68a3c',
+  busyBg: '#faf3ea',
+  free: '#2fa36b',
+  freeBg: '#eaf7f1',
+};
+
+const FILL: Record<string, { fill: string; stroke: string; selFill: string; selStroke: string }> = {
+  aula: { fill: '#ffffff', stroke: '#a9c4ef', selFill: '#4f8ef7', selStroke: '#2f6fe0' },
+  bano: { fill: '#d8f3ec', stroke: '#4fae95', selFill: '#2f8f7c', selStroke: '#2fa36b' },
+  serv: { fill: '#fbeccb', stroke: '#c99a3f', selFill: '#8a6a2c', selStroke: '#d68a3c' },
+  muted: { fill: '#d3e3fb', stroke: '#b9cdf0', selFill: '#d3e3fb', selStroke: '#b9cdf0' },
+};
+
+const LABEL_PX = 13; // tamaño de los nombres en pantalla, sin importar el zoom
+
+type Props = { buildingId: string; onBack: () => void };
+
+export default function BuildingInterior({ buildingId, onBack }: Props) {
+  const ed = EDIFICIOS[buildingId];
+  const { width: winW } = useWindowDimensions();
+  const pisos = Object.keys(ed.floors);
+
+  const [floor, setFloor] = useState(pisos[0]);
+  const [mi, setMi] = useState<Ubicacion>(() => puntoInicial(ed));
+  const [selId, setSelId] = useState<string | null>(null);
+  const [ruta, setRuta] = useState<Ruta | null>(null);
+  const [whereOpen, setWhereOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [toast, setToast] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(winW < 600 ? 2.4 : 1);
+  const [mapW, setMapW] = useState(Math.max(280, Math.min(winW, 900) - 60));
+
+  const scrollRef = useRef<ScrollView>(null);
+  const scrollX = useRef(0);
+
+  const piso = ed.floors[floor];
+  const [vx, vy, vw, vh] = piso.viewBox.split(' ').map(Number);
+  const svgW = mapW * zoom;
+  const svgH = (svgW * vh) / vw;
+  const fs = LABEL_PX / (svgW / vw); // tamaño de letra en unidades del plano
+
+  // al cambiar de piso, centrar el plano
+  useEffect(() => {
+    const id = setTimeout(() => scrollRef.current?.scrollTo({ x: Math.max(0, (svgW - mapW) / 2), animated: false }), 30);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floor, mapW]);
+
+  function cambiarZoom(factor: number) {
+    const nuevo = Math.max(1, Math.min(4.5, zoom * factor));
+    const fx = (scrollX.current + mapW / 2) / svgW;
+    setZoom(nuevo);
+    setTimeout(() => scrollRef.current?.scrollTo({ x: fx * mapW * nuevo - mapW / 2, animated: false }), 0);
+  }
+
+  function showToast(msg: string) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2200);
+  }
+
+  function elegirPiso(f: string) {
+    setFloor(f);
+    setSelId(null);
+    setRuta(null);
+  }
+
+  function elegirEspacio(id: string) {
+    setSelId(id);
+    setRuta(null);
+  }
+
+  function buscar(texto: string) {
+    setQuery(texto);
+    const r = buscarEspacio(ed, texto);
+    if (!r) return;
+    if (r.floor !== floor) {
+      setFloor(r.floor);
+      showToast(`${labelFor(r.forma.id)} está en ${r.floor} — te llevamos ahí`);
+    }
+    elegirEspacio(r.forma.id);
+  }
+
+  const forma = piso.shapes.find((s) => s.id === selId) ?? null;
+  const miPunto = pointById(ed, mi.floor, mi.pointId);
+  const puntoEnEstePiso = mi.floor === floor ? miPunto : null;
+
+  function comoLlegar() {
+    if (!forma) return;
+    setRuta(calcularRuta(ed, mi, floor, forma, labelFor(forma.id) || forma.id));
+  }
+
+  /* ---------------- UI ---------------- */
+  return (
+    <ScrollView style={s.screen} contentContainerStyle={{ paddingBottom: 28 }}>
+      {/* barra superior */}
+      <View style={s.topbar}>
+        <Pressable onPress={onBack} style={s.backBtn} accessibilityLabel="Volver al campus">
+          <Text style={{ fontSize: 18, color: C.text }}>‹</Text>
+        </Pressable>
+        <Text style={s.title}>{ed.name}</Text>
+      </View>
+      <Text style={s.subtitle}>{ed.name} · Planos reales</Text>
+
+      {/* buscador */}
+      <View style={s.search}>
+        <Text style={{ color: '#8ea0c2' }}>🔍</Text>
+        <TextInput
+          value={query}
+          onChangeText={buscar}
+          placeholder="Buscar aula (ej: Aula 13)"
+          placeholderTextColor={C.dim}
+          style={s.searchInput}
+        />
+      </View>
+
+      {/* pisos */}
+      <View style={s.tabs}>
+        {pisos.map((f) => (
+          <Pressable key={f} onPress={() => elegirPiso(f)} style={[s.tab, f === floor && s.tabActive]}>
+            <Text style={[s.tabText, f === floor && { color: '#fff' }]}>{f}</Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {/* estás en */}
+      <Pressable style={s.whereBtn} onPress={() => setWhereOpen((o) => !o)}>
+        <Text style={{ color: C.dim, fontSize: 12.5, flex: 1 }}>
+          📍 Estás en: <Text style={{ color: C.text, fontWeight: '600' }}>{`${miPunto.label} · ${mi.floor}`}</Text>
+        </Text>
+        <Text style={{ color: C.dim }}>{whereOpen ? '▴' : '▾'}</Text>
+      </Pressable>
+      {whereOpen && (
+        <View style={s.whereList}>
+          {pisos.map((f) => {
+            const pts = ed.floors[f].points.filter((p) => p.selectable !== false);
+            if (!pts.length) return null;
+            return (
+              <View key={f}>
+                <Text style={s.whereHeader}>{f}</Text>
+                {pts.map((p) => {
+                  const activo = f === mi.floor && p.id === mi.pointId;
+                  return (
+                    <Pressable
+                      key={p.id}
+                      style={[s.whereOpt, activo && { backgroundColor: C.elevated }]}
+                      onPress={() => {
+                        setMi({ floor: f, pointId: p.id });
+                        setWhereOpen(false);
+                        elegirPiso(f);
+                      }}
+                    >
+                      <View style={s.dot} />
+                      <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.accent, fontWeight: '600' }]}>{p.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            );
+          })}
+        </View>
+      )}
+
+      {/* mapa */}
+      <View style={s.mapWrap} onLayout={(e) => setMapW(e.nativeEvent.layout.width - 24)}>
+        {toast && (
+          <View style={s.toast}>
+            <Text style={s.toastText}>{toast}</Text>
+          </View>
+        )}
+        <View style={s.floorLabelRow}>
+          <Text style={s.floorLabel}>{floor}</Text>
+          <Text style={s.floorLabel}>{piso.shapes.filter((x) => classify(x.id) !== 'muted').length} espacios</Text>
+        </View>
+
+        <ScrollView
+          ref={scrollRef}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          scrollEventThrottle={32}
+          onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => (scrollX.current = e.nativeEvent.contentOffset.x)}
+          style={{ borderRadius: 14 }}
+        >
+          <Svg width={svgW} height={svgH} viewBox={piso.viewBox}>
+            {/* espacios */}
+            <G>
+              {piso.shapes.map((sh) => {
+                const tipo = classify(sh.id);
+                const st = FILL[tipo];
+                const sel = sh.id === selId;
+                return (
+                  <Path
+                    key={sh.id}
+                    d={sh.d}
+                    fill={sel ? st.selFill : st.fill}
+                    stroke={sel ? st.selStroke : st.stroke}
+                    strokeWidth={tipo === 'muted' ? 0.6 : 1.2}
+                    pointerEvents={tipo === 'muted' ? 'none' : 'auto'}
+                    onPress={tipo === 'muted' ? undefined : () => elegirEspacio(sh.id)}
+                  />
+                );
+              })}
+            </G>
+
+            {/* íconos de baños / escaleras */}
+            <G pointerEvents="none">
+              {piso.icons.map((ic) =>
+                ic.ds.map((d, i) => <Path key={ic.forId + i} d={d} fill="rgba(18,33,60,.55)" />),
+              )}
+            </G>
+
+            {/* ruta */}
+            {ruta && (
+              <Path
+                d={rutaToPath(ruta.points)}
+                fill="none"
+                stroke={C.mapAccent}
+                strokeWidth={2.5}
+                strokeDasharray="6 5"
+                strokeLinecap="round"
+                pointerEvents="none"
+              />
+            )}
+
+            {/* "estás acá" */}
+            {puntoEnEstePiso && (
+              <G pointerEvents="none">
+                <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={9} fill="#4f8ef7" />
+                <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={15} fill="none" stroke="#4f8ef7" strokeWidth={2} opacity={0.5} />
+              </G>
+            )}
+
+            {/* carteles (con halo blanco para que se lean sobre cualquier color) */}
+            <G pointerEvents="none">
+              {piso.shapes.map((sh) => {
+                if (!mostrarCartel(sh.id)) return null;
+                const tipo = classify(sh.id);
+                const label = labelFor(sh.id)!;
+                const conClase = !!SCHEDULE[sh.id];
+                const y = (conClase ? sh.cy - fs * 0.35 : sh.cy) + fs * 0.35; // +0.35 = centrado vertical
+                return (
+                  <G key={'t' + sh.id}>
+                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill="none" stroke="rgba(255,255,255,.9)" strokeWidth={fs * 0.2} strokeLinejoin="round">
+                      {label}
+                    </SvgText>
+                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill={C.text}>
+                      {label}
+                    </SvgText>
+                    {(conClase || tipo === 'aula') && (
+                      <Circle cx={sh.cx} cy={y - fs * 0.35 + fs * 0.95} r={Math.max(3, fs * 0.2)} fill={conClase ? '#f5a35c' : '#4fd18a'} />
+                    )}
+                  </G>
+                );
+              })}
+            </G>
+          </Svg>
+        </ScrollView>
+
+        {/* zoom */}
+        <View style={s.zoomCtl}>
+          <Pressable style={s.zoomBtn} onPress={() => cambiarZoom(1.35)}>
+            <Text style={s.zoomTxt}>+</Text>
+          </Pressable>
+          <Pressable style={s.zoomBtn} onPress={() => cambiarZoom(1 / 1.35)}>
+            <Text style={s.zoomTxt}>−</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* ficha */}
+      <View style={s.info}>
+        {!forma ? (
+          <Text style={s.infoEmpty}>Tocá un espacio en el mapa para ver su información.</Text>
+        ) : (
+          <FichaEspacio
+            nombreEdificio={ed.name}
+            piso={floor}
+            id={forma.id}
+            ruta={ruta}
+            onComoLlegar={comoLlegar}
+          />
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+/* ---------- ficha de un espacio ---------- */
+function FichaEspacio({
+  nombreEdificio,
+  piso,
+  id,
+  ruta,
+  onComoLlegar,
+}: {
+  nombreEdificio: string;
+  piso: string;
+  id: string;
+  ruta: Ruta | null;
+  onComoLlegar: () => void;
+}) {
+  const tipo = classify(id);
+  const label = labelFor(id) || id;
+  const clase = SCHEDULE[id];
+  const nota = NOTES[id];
+  const am = AMENITIES[id];
+
+  return (
+    <View>
+      <View style={s.roomHeader}>
+        <View style={{ flex: 1, gap: 1 }}>
+          <Text style={s.bldgName}>{nombreEdificio}</Text>
+          <Text style={s.roomTitle}>{label}</Text>
+          <Text style={s.where}>{piso}</Text>
+          {tipo === 'aula' ? (
+            <View style={[s.pill, { backgroundColor: clase ? C.busyBg : C.freeBg }]}>
+              <Text style={[s.pillText, { color: clase ? C.busy : C.free }]}>{clase ? 'Con clase' : 'Libre ahora'}</Text>
+            </View>
+          ) : (
+            <View style={[s.pill, { backgroundColor: 'rgba(21,51,150,.1)' }]}>
+              <Text style={[s.pillText, { color: C.accent }]}>{typeLabel(tipo)}</Text>
+            </View>
+          )}
+        </View>
+        <Image source={FOTO} style={s.photo} resizeMode="cover" />
+      </View>
+
+      {clase && (
+        <View style={s.card}>
+          <Text style={{ fontWeight: '600', color: C.text, marginBottom: 3 }}>{clase.subject}</Text>
+          <Text style={{ color: C.dim, fontSize: 12.5 }}>{`${clase.time} · Prof. ${clase.prof}`}</Text>
+        </View>
+      )}
+
+      {tipo === 'aula' &&
+        (am ? (
+          <View style={s.amenities}>
+            <Chip ic="🔌" txt={`${am.enchufes} enchufes`} />
+            <Chip ic="📶" txt="Wifi" off={!am.wifi} />
+            <Chip ic="📽️" txt="Proyector" off={!am.proyector} />
+            <Chip ic="♿" txt="Accesible" off={!am.accesible} />
+            <Chip ic="👥" txt={`${am.capacidad} pers.`} />
+          </View>
+        ) : (
+          <View style={s.card}>
+            <Text style={{ color: C.dim, fontSize: 12 }}>Todavía no cargamos los datos de enchufes/wifi de esta aula.</Text>
+          </View>
+        ))}
+
+      {nota && (
+        <View style={s.card}>
+          <Text style={{ color: C.dim, fontSize: 12 }}>{nota}</Text>
+        </View>
+      )}
+
+      <Pressable style={s.goBtn} onPress={onComoLlegar}>
+        <Text style={s.goBtnText}>Cómo llegar</Text>
+      </Pressable>
+
+      {ruta && (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          {ruta.pasos.map((paso, i) => (
+            <View key={i} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+              <View style={s.stepN}>
+                <Text style={{ fontSize: 10, fontWeight: '700', color: C.text }}>{i + 1}</Text>
+              </View>
+              <Text style={{ flex: 1, fontSize: 12.5, color: C.dim }}>
+                {paso.map((seg, j) => (
+                  <Text key={j} style={seg.b ? { color: C.text, fontWeight: '600' } : undefined}>
+                    {seg.t}
+                  </Text>
+                ))}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+}
+
+function Chip({ ic, txt, off }: { ic: string; txt: string; off?: boolean }) {
+  return (
+    <View style={[s.chip, off && { opacity: 0.35 }]}>
+      <Text style={{ fontSize: 13 }}>{ic}</Text>
+      <Text style={[{ fontSize: 11.5, color: C.text }, off && { textDecorationLine: 'line-through' }]}>{txt}</Text>
+    </View>
+  );
+}
+
+/* ---------- estilos ---------- */
+const s = StyleSheet.create({
+  screen: { flex: 1, backgroundColor: C.bg },
+  topbar: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18, paddingTop: 12, paddingBottom: 6 },
+  backBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7d9f5', alignItems: 'center', justifyContent: 'center', elevation: 3 },
+  title: { fontSize: 18, fontWeight: '700', color: C.text },
+  subtitle: { fontSize: 11, color: C.dim, marginHorizontal: 18, marginBottom: 10 },
+  search: { marginHorizontal: 18, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
+  searchInput: { flex: 1, fontSize: 14, color: C.text, padding: 0 },
+  tabs: { flexDirection: 'row', gap: 6, paddingHorizontal: 18, marginBottom: 12 },
+  tab: { backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, paddingVertical: 7, paddingHorizontal: 14, borderRadius: 20 },
+  tabActive: { backgroundColor: C.accent, borderColor: C.accent },
+  tabText: { fontSize: 12.5, fontWeight: '600', color: C.dim },
+  whereBtn: { marginHorizontal: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 10 },
+  whereList: { marginHorizontal: 18, marginBottom: 10, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 8 },
+  whereHeader: { fontSize: 10.5, color: C.dim, paddingHorizontal: 9, paddingTop: 7, paddingBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 },
+  whereOpt: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 9 },
+  dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
+  mapWrap: { marginHorizontal: 18, backgroundColor: C.mapBg, borderWidth: 1, borderColor: '#c7d9f5', borderRadius: 22, padding: 12, paddingTop: 14 },
+  floorLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  floorLabel: { fontSize: 11.5, fontWeight: '600', color: 'rgba(18,33,60,.55)' },
+  toast: { position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5, backgroundColor: '#fff', paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, elevation: 6 },
+  toastText: { fontSize: 12, fontWeight: '600', color: C.accent },
+  zoomCtl: { position: 'absolute', right: 20, bottom: 20, gap: 8 },
+  zoomBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: '#fff', borderWidth: 1, borderColor: '#c7d9f5', alignItems: 'center', justifyContent: 'center', elevation: 3 },
+  zoomTxt: { fontSize: 22, color: C.text, lineHeight: 24 },
+  info: { margin: 18, marginBottom: 0, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16 },
+  infoEmpty: { color: C.dim, fontSize: 13, textAlign: 'center', padding: 20, lineHeight: 20 },
+  roomHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, marginBottom: 12 },
+  bldgName: { fontSize: 16, fontWeight: '700', color: C.text },
+  roomTitle: { fontSize: 16, fontWeight: '700', color: C.text },
+  where: { fontSize: 12.5, color: C.dim, marginBottom: 6 },
+  pill: { alignSelf: 'flex-start', paddingVertical: 4, paddingHorizontal: 9, borderRadius: 20 },
+  pillText: { fontSize: 10.5, fontWeight: '600' },
+  photo: { width: 112, height: 80, borderRadius: 14, backgroundColor: C.elevated },
+  card: { backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 11, marginTop: 10 },
+  amenities: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 12 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, borderRadius: 20, paddingVertical: 5, paddingHorizontal: 10 },
+  goBtn: { marginTop: 12, backgroundColor: C.accent, borderRadius: 14, padding: 14, alignItems: 'center' },
+  goBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  stepN: { width: 18, height: 18, borderRadius: 9, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
+});
