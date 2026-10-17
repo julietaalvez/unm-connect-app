@@ -54,6 +54,9 @@ export default function AppTabs() {
           renderingMode="original"
         />
       </NativeTabs.Trigger>
+
+      {/* Pantalla a la que se llega desde el Inicio; no aparece en la barra */}
+      <NativeTabs.Trigger name="profesores" hidden />
     </NativeTabs>
   );
 }
