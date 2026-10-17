@@ -2,6 +2,9 @@
 // Datos de Daract I, Daract II y Dorrego I: formas, pasillos, puertas y escaleras.
 // Para editar horarios / notas / enchufes, tocá SCHEDULE, NOTES y AMENITIES (arriba de todo).
 
+import { grafoDesdeCorredores } from '../lib/corredores';
+import { CORREDORES } from './corredores';
+
 export type Punto = { id: string; label: string; x: number; y: number; selectable?: boolean };
 export type Forma = { id: string; d: string; cx: number; cy: number; x: number; y: number; w: number; h: number };
 export type Icono = { forId: string; ds: string[] };
@@ -122,3 +125,19 @@ export const EDIFICIOS: Record<string, Edificio> = {"edificio-daract2":{"name":"
 
 /** ids de los edificios que ya tienen mapa interior (para mostrar el botón "Ver mapa interior") */
 export const EDIFICIOS_CON_INTERIOR = Object.keys(EDIFICIOS);
+
+/* ---------- correcciones (no tocar los datos de arriba) ---------- */
+
+// Daract II: las puertas de los baños estaban cruzadas (M con F)
+const d2 = EDIFICIOS['edificio-daract2'].entrances;
+d2['bano-pb-m1'] = ['entrada-bano-pb-f1'];
+d2['bano-pb-f1'] = ['entrada-bano-pb-m1'];
+d2['bano-plantaalta-f4'] = ['entrada-bano-plantaalta-m4'];
+d2['bano-plantaalta-m4'] = ['entrada-bano-plantaalta-f4'];
+
+// Daract I y II: pasillos nuevos, con cada puerta enganchada al pasillo más cercano
+for (const [idEd, pisos] of Object.entries(CORREDORES)) {
+  for (const [piso, c] of Object.entries(pisos)) {
+    EDIFICIOS[idEd].graph[piso] = grafoDesdeCorredores(EDIFICIOS[idEd].graph[piso], c);
+  }
+}

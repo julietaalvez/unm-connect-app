@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
@@ -13,8 +13,26 @@ export default function HeaderMapa({ onBack }: { onBack?: () => void }) {
   const insets = useSafeAreaInsets();
   const boton = { backgroundColor: C.btnBg, borderColor: C.btnBorder };
 
+  const ref = useRef<View>(null);
+  const [extraTop, setExtraTop] = useState<number | null>(null); // null = todavía no midió
+
+  // Mide a qué altura de la pantalla quedó el header. Si el contenedor ya lo bajó
+  // (por ejemplo las pestañas nativas), solo se suma lo que falta de la zona segura.
+  // Se mide una sola vez por montaje, con el scroll arriba de todo.
+  function medir() {
+    if (extraTop !== null) return;
+    ref.current?.measureInWindow((_x, y) => {
+      setExtraTop(Math.max(0, insets.top - Math.max(0, y)));
+    });
+  }
+
   return (
-    <View style={[s.row, { paddingTop: insets.top + 8 }]}>
+    <View
+      ref={ref}
+      collapsable={false}
+      onLayout={medir}
+      style={[s.row, { paddingTop: (extraTop ?? 0) + 8, opacity: extraTop === null ? 0 : 1 }]}
+    >
       {onBack && (
         <Pressable onPress={onBack} style={[s.btn, boton]} accessibilityLabel="Volver al campus">
           <Text style={{ fontSize: 20, color: C.text, marginTop: -2 }}>‹</Text>
