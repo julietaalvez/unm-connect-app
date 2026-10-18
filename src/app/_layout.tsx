@@ -6,7 +6,8 @@ import { Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-googl
 import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { registrarCierre } from '../lib/sesion';
 import LoginScreen from './login';
 import RegisterScreen from './register';
 
@@ -15,6 +16,11 @@ SplashScreen.preventAutoHideAsync();
 function Layout() {
   const { theme } = useAppTheme();
   const [vista, setVista] = useState<'login' | 'registro' | 'app'>('login');
+    // al cerrar sesión desde Perfil, vuelve al login
+  useEffect(() => {
+    registrarCierre(() => setVista('login'));
+    return () => registrarCierre(null);
+  }, []);
 
   // Tipografías de la app (las usa la pantalla de Inicio)
   const [fontsOk, fontError] = useFonts({

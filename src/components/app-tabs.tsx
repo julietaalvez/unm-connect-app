@@ -1,16 +1,17 @@
-import { Colors } from '@/constants/theme';
-import { useAppTheme } from '@/context/theme-context';
+import { useTema } from '@/lib/tema';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
 
 export default function AppTabs() {
-  const { theme } = useAppTheme();
-  const colors = Colors[theme];
+  const { C, modo } = useTema();
+  const celeste = modo === 'dark' ? '#6FA8FF' : '#2F6FE0';
 
   return (
     <NativeTabs
-      backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
-      labelStyle={{ selected: { color: colors.text } }}>
+      key={modo}
+      backgroundColor={C.bg}
+      indicatorColor={C.panel2}
+      iconColor={{ default: celeste, selected: celeste }}
+      labelStyle={{ default: { color: C.dim }, selected: { color: C.text } }}>
       <NativeTabs.Trigger name="index">
         <NativeTabs.Trigger.Label>Inicio</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
@@ -54,9 +55,6 @@ export default function AppTabs() {
           renderingMode="original"
         />
       </NativeTabs.Trigger>
-
-      {/* Pantalla a la que se llega desde el Inicio; no aparece en la barra */}
-      <NativeTabs.Trigger name="profesores" />
     </NativeTabs>
   );
 }

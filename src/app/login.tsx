@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import BotonTema from '../components/BotonTema';
 import { API_URL } from '../lib/api';
 import { guardarUsuario } from '../lib/sesion';
 
@@ -18,7 +19,7 @@ export default function LoginScreen({
   onLoginSuccess?: () => void;
    onGoToRegister?: () => void;
 }) {
-  const { theme, toggleTheme } = useAppTheme();
+  const { theme } = useAppTheme();
   const isDark = theme === 'dark';
 
   const [usuario, setUsuario] = useState('');
@@ -61,9 +62,7 @@ export default function LoginScreen({
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <Pressable onPress={toggleTheme} style={styles.themeBtn}>
-        <Text style={{ fontSize: 22 }}>{isDark ? '☀️' : '🌙'}</Text>
-      </Pressable>
+      <BotonTema style={styles.themeBtn} />
 
       <Image
         source={require('@/assets/images/logo.png')}

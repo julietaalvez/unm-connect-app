@@ -83,3 +83,8 @@ export function useTema() {
   const modo = useSyncExternalStore(suscribir, () => modoActual);
   return { modo, C: modo === 'dark' ? OSCURO : CLARO, alternar: alternarTema };
 }
+export function fijarTema(m: 'light' | 'dark') {
+  if (m === modoActual) return;
+  modoActual = m;
+  oyentes.forEach((f) => f());
+}

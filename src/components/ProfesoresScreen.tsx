@@ -2,8 +2,6 @@ import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
-
-import HeaderMapa from '../components/HeaderMapa';
 import { FUENTE, PROFES } from '../data/profes';
 import { cargarProfesores } from '../lib/api';
 import {
@@ -12,6 +10,7 @@ import {
 } from '../lib/profes';
 import { Colores, useTema } from '../lib/tema';
 import { Wf, useWf } from '../lib/wf';
+import HeaderMapa from './HeaderMapa';
 
 const CYAN = '#3ec6ef';
 
@@ -26,7 +25,7 @@ const F = {
 
 type Pal = { C: Colores; W: Wf; oscuro: boolean };
 
-export default function ProfesoresScreen() {
+export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void }) {
   const { C } = useTema();
   const { W, oscuro } = useWf();
   const pal: Pal = { C, W, oscuro };
@@ -70,6 +69,7 @@ export default function ProfesoresScreen() {
 
   function irAlMapa(destino: Franja) {
     setSel(null);
+    alCerrar();
     router.navigate({
       pathname: '/mapa',
       params: {
@@ -92,7 +92,7 @@ export default function ProfesoresScreen() {
       >
         {/* título + volver */}
         <View style={s.pageHead}>
-          <Pressable style={s.back} accessibilityLabel="Volver al inicio" onPress={() => router.navigate('/')}>
+          <Pressable style={s.back} accessibilityLabel="Volver al inicio" onPress={alCerrar}>
             <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={C.text} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
               <Polyline points="15 18 9 12 15 6" />
             </Svg>

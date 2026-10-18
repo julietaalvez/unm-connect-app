@@ -1,10 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Path, Polyline } from 'react-native-svg';
+import { Alert, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import HeaderMapa from '../components/HeaderMapa';
+import ProfesoresScreen from '../components/ProfesoresScreen';
 import {
   ClaseHoy,
   Fuente,
@@ -15,6 +15,7 @@ import {
   clasesEjemplo,
 } from '../lib/api';
 import { aMinutos, contarAulasLibres, minutosDe } from '../lib/inicio';
+import { armarCursadas, clasesDelDia, useCatalogo, useInscripciones } from '../lib/inscripciones';
 import { labelFor } from '../lib/interior';
 import { usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
@@ -26,6 +27,12 @@ const IC = {
   clase: require('../../assets/icons/clase.png'),
   novedades: require('../../assets/icons/novedades.png'),
   profesores: require('../../assets/icons/profesores.png'),
+  // iconos chicos de Mi día y avisos: cambiá el nombre del archivo si querés otros
+  pin: require('../../assets/icons/pin.png'),
+  reloj: require('../../assets/icons/reloj.png'),
+  video: require('../../assets/icons/video.png'),
+  persona: require('../../assets/icons/profesores.png'),
+  aviso: require('../../assets/icons/campana.png'),
 };
 
 const primerNombre = () => (usuarioActual()?.nombre ?? 'estudiante').split(' ')[0];
@@ -44,26 +51,7 @@ const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', '
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const sin0 = (h: string) => h.replace(/^0/, '');
 
-/* mini íconos de la fila (pin / reloj / persona) */
-const IcoPin = ({ W }: { W: Wf }) => (
-  <Svg width={11} height={11} viewBox="0 0 24 24">
-    <Path d="M12 22S5 15.5 5 10a7 7 0 0 1 14 0c0 5.5-7 12-7 12Z" fill={W.pin} />
-    <Circle cx={12} cy={10} r={2.6} fill={W.pinIn} />
-  </Svg>
-);
-const IcoReloj = ({ W }: { W: Wf }) => (
-  <Svg width={11} height={11} viewBox="0 0 24 24">
-    <Circle cx={12} cy={12} r={10} fill={W.pin} />
-    <Polyline points="12 6.5 12 12 15.5 14" fill="none" stroke={W.pinIn} strokeWidth={2.4} strokeLinecap="round" />
-  </Svg>
-);
-const IcoPersona = ({ W }: { W: Wf }) => (
-  <Svg width={11} height={11} viewBox="0 0 24 24">
-    <Circle cx={12} cy={12} r={10} fill={W.pin} />
-    <Circle cx={12} cy={9.5} r={3} fill={W.pinIn} />
-    <Path d="M6.5 18c1-2.6 3-3.8 5.5-3.8s4.5 1.2 5.5 3.8" fill={W.pinIn} />
-  </Svg>
-);
+const Mini = ({ src }: { src: number }) => <Image source={src} style={{ width: 12, height: 12 }} resizeMode="contain" />;
 
 export default function InicioScreen() {
   const { C } = useTema();
@@ -75,7 +63,8 @@ export default function InicioScreen() {
   const [clases, setClases] = useState<ClaseHoy[]>(() => clasesEjemplo());
   const [novedades, setNovedades] = useState<Novedad[]>(NOVEDADES_EJEMPLO);
   const [fuente, setFuente] = useState<Fuente>('ejemplo');
-  const [cargando, setCargando] = useState(true);
+  const [, setCargando] = useState(true);
+  const [verProfes, setVerProfes] = useState(false);
   const [, setTic] = useState(0);
 
   const cargar = useCallback(async () => {
@@ -100,10 +89,13 @@ export default function InicioScreen() {
   const min = minutosDe(ahora);
   const { total, libres } = contarAulasLibres(clases, min);
 
-  const miDia = useMemo(
-    () => [...clases].sort((a, b) => aMinutos(a.desde) - aMinutos(b.desde)),
-    [clases]
-  );
+  const catalogo = useCatalogo();
+const { claves } = useInscripciones();
+const hoyKey = ahora.toDateString();
+const miDia = useMemo(
+  () => clasesDelDia(armarCursadas(catalogo).filter((c) => claves.has(c.clave)), new Date()),
+  [catalogo, claves, hoyKey]
+);
   const quedan = miDia.some((c) => aMinutos(c.hasta) > min);
   const fecha = `${DIAS[ahora.getDay()]} ${ahora.getDate()} de ${MESES[ahora.getMonth()]}`;
   const subtitulo = miDia.length && !quedan ? `Ya terminaste por hoy · ${fecha}` : `Hoy, ${fecha}`;
@@ -134,49 +126,57 @@ export default function InicioScreen() {
         <Text style={s.mdTitulo}>MI DÍA</Text>
         <Text style={s.mdSub}>{subtitulo}</Text>
 
-        {cargando ? (
-          <Text style={s.mdNone}>Cargando…</Text>
-        ) : miDia.length === 0 ? (
-          <Text style={s.mdNone}>No hay nada agendado por ahora.</Text>
-        ) : (
-          miDia.map((c, i) => {
-            const enCurso = aMinutos(c.desde) <= min && min < aMinutos(c.hasta);
-            return (
-              <Pressable
-                key={`${c.materia}-${c.desde}-${i}`}
-                style={({ pressed }) => [s.mdItem, enCurso && s.mdItemAhora, pressed && { transform: [{ scale: 0.99 }] }]}
-                onPress={() => router.navigate('/mapa')}
-              >
-                <View style={s.mdIc}>
-                  <Image source={IC.clase} style={s.mdIcImg} resizeMode="contain" />
-                </View>
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={s.mdN}>{c.materia}</Text>
-                  <View style={s.mdM}>
-                    <View style={s.mdMItem}>
-                      <IcoPin W={W} />
-                      <Text style={s.mdMTxt}>{labelFor(c.aulaId) ?? c.aulaId}</Text>
-                    </View>
-                    <View style={s.mdMItem}>
-                      <IcoReloj W={W} />
-                      <Text style={s.mdMTxt}>{`${sin0(c.desde)} – ${sin0(c.hasta)}`}</Text>
-                    </View>
-                    {!!c.profesor && (
-                      <View style={s.mdMItem}>
-                        <IcoPersona W={W} />
-                        <Text style={s.mdMTxt}>{`Prof. ${c.profesor}`}</Text>
-                      </View>
-                    )}
-                  </View>
-                  <View style={s.mdTags}>
-                    {enCurso && <Text style={[s.mdTag, s.mdTagAhora]}>En curso</Text>}
-                    <Text style={s.mdTag}>Presencial</Text>
-                  </View>
-                </View>
-              </Pressable>
-            );
-          })
-        )}
+       {claves.size === 0 ? (
+  <View>
+    <Text style={s.mdNone}>Todavía no agregaste tus materias.</Text>
+    <Pressable style={s.mdBtn} onPress={() => router.navigate('/perfil')}>
+      <Text style={s.mdBtnTxt}>Agregar materias</Text>
+    </Pressable>
+  </View>
+) : miDia.length === 0 ? (
+  <Text style={s.mdNone}>Hoy no tenés clases.</Text>
+) : (
+  miDia.map((c, i) => {
+    const enCurso = aMinutos(c.desde) <= min && min < aMinutos(c.hasta);
+    const lugar = (c.aula && labelFor(c.aula)) || c.lugar;
+    return (
+      <Pressable
+        key={`${c.materia}-${c.desde}-${i}`}
+        style={({ pressed }) => [s.mdItem, enCurso && s.mdItemAhora, pressed && { transform: [{ scale: 0.99 }] }]}
+        onPress={() => {
+          if (!c.virtual) router.navigate('/mapa');
+        }}
+      >
+        <View style={s.mdIc}>
+          <Image source={IC.clase} style={s.mdIcImg} resizeMode="contain" />
+        </View>
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={s.mdN}>{c.materia}</Text>
+          <View style={s.mdM}>
+            <View style={s.mdMItem}>
+              <Mini src={c.virtual ? IC.video : IC.pin} />
+              <Text style={s.mdMTxt}>{c.virtual ? 'Virtual' : lugar}</Text>
+            </View>
+            <View style={s.mdMItem}>
+              <Mini src={IC.reloj} />
+              <Text style={s.mdMTxt}>{`${sin0(c.desde)} – ${sin0(c.hasta)}`}</Text>
+            </View>
+            {!!c.profesor && (
+              <View style={s.mdMItem}>
+                <Mini src={IC.persona} />
+                <Text style={s.mdMTxt}>{`Prof. ${c.profesor}`}</Text>
+              </View>
+            )}
+          </View>
+          <View style={s.mdTags}>
+            {enCurso && <Text style={[s.mdTag, s.mdTagAhora]}>En curso</Text>}
+            <Text style={s.mdTag}>{c.virtual ? 'Virtual' : 'Presencial'}</Text>
+          </View>
+        </View>
+      </Pressable>
+    );
+  })
+)}
       </View>
 
       {/* banner */}
@@ -202,7 +202,7 @@ export default function InicioScreen() {
           <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
           <Text style={s.qTxt}>Novedades</Text>
         </Pressable>
-        <Pressable style={s.qbtn} onPress={() => router.navigate('/profesores' as never)}>
+        <Pressable style={s.qbtn} onPress={() => setVerProfes(true)}>
           <Image source={IC.profesores} style={s.qIc} resizeMode="contain" />
           <Text style={s.qTxt}>Profesores</Text>
         </Pressable>
@@ -223,18 +223,24 @@ export default function InicioScreen() {
           <Text style={s.bloqueSub}>No hay novedades por ahora.</Text>
         </View>
       ) : (
-        novedades.map((n) => (
-          <View key={n.id} style={[s.bloque, { flexDirection: 'column', alignItems: 'flex-start', gap: 2 }]}>
-            <Text style={s.avisoTitulo}>{n.titulo}</Text>
-            {!!n.texto && <Text style={s.bloqueSub}>{n.texto}</Text>}
-          </View>
-        ))
+       novedades.map((n) => (
+  <View key={n.id} style={s.bloque}>
+    <Image source={IC.aviso} style={s.avisoIc} resizeMode="contain" />
+    <View style={{ flex: 1 }}>
+      <Text style={s.avisoTitulo}>{n.titulo}</Text>
+      {!!n.texto && <Text style={s.bloqueSub}>{n.texto}</Text>}
+    </View>
+  </View>
+))
       )}
 
       {/* solo se ve mientras desarrollan (expo start), no en la app final */}
       {__DEV__ && fuente === 'ejemplo' && (
         <Text style={s.dev}>Mostrando datos de ejemplo: el servidor no respondió o la base está vacía.</Text>
       )}
+      <Modal visible={verProfes} animationType="slide" statusBarTranslucent onRequestClose={() => setVerProfes(false)}>
+  <ProfesoresScreen alCerrar={() => setVerProfes(false)} />
+</Modal>
     </ScrollView>
   );
 }
@@ -284,5 +290,8 @@ const makeStyles = (W: Wf) =>
     bloqueSub: { fontFamily: F.body, fontSize: 12.5, color: W.meta },
     libresNum: { fontFamily: F.h1, fontSize: 34, color: W.navy },
     avisoTitulo: { fontFamily: F.bold, fontSize: 13, color: W.ink },
+    avisoIc: { width: 26, height: 26 },
+    mdBtn: { alignSelf: 'flex-start', marginTop: 8, marginHorizontal: 6, marginBottom: 4, backgroundColor: W.tagBg, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 14 },
+    mdBtnTxt: { fontFamily: F.bold, fontSize: 11.5, color: W.tagInk },
     dev: { fontFamily: F.body, fontSize: 11, color: W.meta, textAlign: 'center', marginHorizontal: 18, marginTop: 4 },
   });

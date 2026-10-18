@@ -1,17 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import {
-  Alert,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useAppTheme } from '@/context/theme-context';
+import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+
+import HeaderMapa from '../components/HeaderMapa';
+import type { Cursada } from '../lib/inscripciones';
+import { FERIADOS, armarCursadas, useCatalogo, useInscripciones } from '../lib/inscripciones';
+import { useTema } from '../lib/tema';
+import { useWf } from '../lib/wf';
+
+// ── TUS ICONOS PNG ── si algún archivo se llama distinto, cambiá solo el nombre entre comillas
+const ICONOS = {
+  atras: require('../../assets/icons/atras.png'),
+  adelante: require('../../assets/icons/adelante.png'),
+  campana: require('../../assets/icons/campana.png'),
+  calendario: require('../../assets/icons/materias.png'),
+  video: require('../../assets/icons/video.png'),
+  pin: require('../../assets/icons/pin.png'),
+  reloj: require('../../assets/icons/reloj.png'),
+  papelera: require('../../assets/icons/papelera.png'),
+  mas: require('../../assets/icons/mas.png'),
+};
+
+// Un icono PNG con tamaño fijo. Si le pasás "tint", lo pinta de ese color.
+const Icono = ({ src, size = 20, tint }: { src: number; size?: number; tint?: string }) => (
+  <Image source={src} style={[{ width: size, height: size }, tint ? { tintColor: tint } : null]} resizeMode="contain" />
+);
 
 type EventType = 'materia' | 'aviso';
 type AgendaEvent = {
@@ -34,64 +48,71 @@ const SHORT_MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 's
 const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const BUILDINGS = ['Daract I', 'Daract II', 'Dorrego I', 'Dorrego II', 'Edificio Histórico', 'Laboratorios', 'Comedor', 'Carpa / Pabellón', 'ESPUM', 'Mantenimiento'];
 
+const F = { h1: 'Montserrat_800ExtraBold', bold: 'Montserrat_700Bold', semi: 'Montserrat_600SemiBold', body: 'Roboto_400Regular', bodyMed: 'Roboto_500Medium', bodyBold: 'Roboto_700Bold' };
+
 const pad = (n: number) => String(n).padStart(2, '0');
 const keyOf = (date: Date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 const parseKey = (key: string) => {
   const [year, month, day] = key.split('-').map(Number);
   return new Date(year, month - 1, day);
 };
-const todayKey = keyOf(new Date());
 
-function createBaseEvents(): AgendaEvent[] {
+const FERIADOS_EVENTS: AgendaEvent[] = Object.entries(FERIADOS).map(([date, title]) => ({ id: `f-${date}`, date, type: 'aviso', title }));
+
+// Eventos de las materias en las que el usuario está inscripto, repetidos cada semana del cuatrimestre
+function eventosDeCursadas(cursadas: Cursada[]): AgendaEvent[] {
   const events: AgendaEvent[] = [];
-  const holidays: Record<string, string> = {
-    '2026-10-12': 'Feriado: Día del Respeto a la Diversidad Cultural',
-    '2026-11-23': 'Feriado: Día de la Soberanía Nacional (trasladado)',
-    '2026-12-07': 'Día no laborable con fines turísticos',
-    '2026-12-08': 'Feriado: Inmaculada Concepción de María',
-    '2026-12-25': 'Feriado: Navidad',
-  };
-  const start = new Date(2026, 7, 3);
-  const end = new Date(2026, 11, 4);
-  for (const date = new Date(start); date <= end; date.setDate(date.getDate() + 1)) {
-    const key = keyOf(date);
-    if (holidays[key]) continue;
-    // Taller de Diseño Multimedial IV: lunes presencial y miércoles virtual.
-    if (date.getDay() === 1) {
-      events.push({
-        id: `b-${key}-1`, date: key, type: 'materia',
-        title: 'Taller de Diseño Multimedial IV', start: '13:30', end: '17:30',
-        modo: 'presencial', aula: 'I001', place: 'I001',
-      });
-    }
-    if (date.getDay() === 3) {
-      events.push({
-        id: `b-${key}-3`, date: key, type: 'materia',
-        title: 'Taller de Diseño Multimedial IV', start: '10:30', end: '12:30',
-        modo: 'virtual',
-      });
-    }
+  const inicio = new Date(2026, 7, 3);
+  const fin = new Date(2026, 11, 4);
+  for (const c of cursadas) {
+    c.franjas.forEach((f, i) => {
+      for (const d = new Date(inicio); d <= fin; d.setDate(d.getDate() + 1)) {
+        const key = keyOf(d);
+        if (FERIADOS[key] || !f.dias.includes(d.getDay())) continue;
+        // "semana por medio": una semana sí y otra no
+        if (f.alterna && Math.floor((d.getTime() - inicio.getTime()) / 604800000) % 2 !== 0) continue;
+        const virtual = f.modo === 'virtual';
+        events.push({
+          id: `m-${c.clave}-${i}-${key}`, date: key, type: 'materia', title: c.materia,
+          start: f.desde, end: f.hasta, modo: virtual ? 'virtual' : 'presencial',
+          ...(virtual ? {} : { aula: f.aula ?? undefined, edificio: f.edificio || undefined, place: f.lugar }),
+        });
+      }
+    });
   }
-  Object.entries(holidays).forEach(([date, title]) => {
-    events.push({ id: `f-${date}`, date, type: 'aviso', title });
-  });
   return events;
 }
-const BASE_EVENTS = createBaseEvents();
 
 export default function AgendaScreen() {
-  const { theme, toggleTheme } = useAppTheme();
-  const dark = theme === 'dark';
-  const colors = dark
-    ? { bg: '#0b1424', panel: '#0b1424', panel2: '#14233d', card: '#1d3152', border: '#263b5e', text: '#e8eefb', muted: '#93a4c4', accent: '#3b6fe0', cyan: '#3ec6ef', busy: '#f0a050', danger: '#ff8a7a' }
-    : { bg: '#ffffff', panel: '#ffffff', panel2: '#e0edff', card: '#b7d6ff', border: '#e3edfb', text: '#12213c', muted: '#737a83', accent: '#153396', cyan: '#3ec6ef', busy: '#d68a3c', danger: '#c0392b' };
+  const router = useRouter();
+  const { C } = useTema();
+  const { W, oscuro } = useWf();
 
+  // colores del estilo "wireframe" de la prueba HTML
+  const K = {
+    headBg: oscuro ? '#1d3152' : '#1a3399',
+    weekBg: W.sq,
+    weekTx: oscuro ? '#04101f' : '#ffffff',
+    dayTx: oscuro ? '#eef3fb' : '#0b1220',
+    dayOut: '#7f9ccf',
+    ring: oscuro ? '#4f8ef7' : '#1a3399',
+    sel: oscuro ? '#4f8ef7' : '#1a3399',
+    link: oscuro ? '#7fb0ff' : '#1a3399',
+    chip: oscuro ? '#1d3152' : 'rgba(255,255,255,0.6)',
+    evIcoTx: oscuro ? '#04101f' : '#ffffff',
+    primary: oscuro ? '#4f8ef7' : '#1a3399',
+    primaryTx: oscuro ? '#04101f' : '#ffffff',
+  };
+  const s = useMemo(() => makeStyles(), []);
+
+  const todayKey = keyOf(new Date());
   const [customEvents, setCustomEvents] = useState<AgendaEvent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [month, setMonth] = useState(new Date().getMonth());
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [abiertoId, setAbiertoId] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [title, setTitle] = useState('');
   const [date, setDate] = useState(todayKey);
@@ -117,10 +138,18 @@ export default function AgendaScreen() {
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(customEvents)).catch(() => {});
   }, [customEvents, loaded]);
 
-  const allEvents = useMemo(() => [...BASE_EVENTS, ...customEvents].sort((a, b) =>
-    `${a.date}${a.start || ''}`.localeCompare(`${b.date}${b.start || ''}`)), [customEvents]);
+  const catalogo = useCatalogo();
+  const { claves } = useInscripciones();
+  const eventosMaterias = useMemo(
+    () => eventosDeCursadas(armarCursadas(catalogo).filter((c) => claves.has(c.clave))),
+    [catalogo, claves]
+  );
+  const allEvents = useMemo(
+    () => [...FERIADOS_EVENTS, ...eventosMaterias, ...customEvents].sort((a, b) => `${a.date}${a.start || ''}`.localeCompare(`${b.date}${b.start || ''}`)),
+    [eventosMaterias, customEvents]
+  );
+  const eventDates = useMemo(() => new Set(allEvents.map((e) => e.date)), [allEvents]);
 
-  const eventDates = useMemo(() => new Set(allEvents.map((event) => event.date)), [allEvents]);
   const calendarDays = useMemo(() => {
     const first = new Date(year, month, 1);
     const startDay = first.getDay();
@@ -133,10 +162,10 @@ export default function AgendaScreen() {
   }, [year, month]);
 
   const visibleEvents = useMemo(() => {
-    if (selectedDate) return allEvents.filter((event) => event.date === selectedDate);
-    const upcoming = allEvents.filter((event) => event.date >= todayKey);
+    if (selectedDate) return allEvents.filter((e) => e.date === selectedDate);
+    const upcoming = allEvents.filter((e) => e.date >= todayKey);
     return showAll ? upcoming : upcoming.slice(0, 3);
-  }, [allEvents, selectedDate, showAll]);
+  }, [allEvents, selectedDate, showAll, todayKey]);
 
   const changeMonth = (delta: number) => {
     const next = new Date(year, month + delta, 1);
@@ -157,17 +186,12 @@ export default function AgendaScreen() {
 
   const saveEvent = () => {
     const cleanTitle = title.trim();
-    if (!cleanTitle) {
-      Alert.alert('Falta el título', 'Escribí un título para el evento.');
-      return;
-    }
+    if (!cleanTitle) return Alert.alert('Falta el título', 'Escribí un título para el evento.');
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parseKey(date).getTime())) {
-      Alert.alert('Fecha inválida', 'Usá el formato AAAA-MM-DD, por ejemplo 2026-10-17.');
-      return;
+      return Alert.alert('Fecha inválida', 'Usá el formato AAAA-MM-DD, por ejemplo 2026-10-17.');
     }
     if (startTime && endTime && endTime <= startTime) {
-      Alert.alert('Horario inválido', 'La hora de fin tiene que ser posterior a la de inicio.');
-      return;
+      return Alert.alert('Horario inválido', 'La hora de fin tiene que ser posterior a la de inicio.');
     }
     const cleanClassroom = classroom.trim().replace(/^aula\s*/i, '');
     const place = [cleanClassroom ? (/^\d+$/.test(cleanClassroom) ? `Aula ${cleanClassroom}` : cleanClassroom) : '', building].filter(Boolean).join(' · ');
@@ -175,13 +199,11 @@ export default function AgendaScreen() {
       id: `c${Date.now()}`, custom: true, type: eventType, title: cleanTitle, date,
       ...(startTime ? { start: startTime } : {}),
       ...(endTime ? { end: endTime } : {}),
-      ...(eventType === 'materia' ? {
-        ...(building ? { edificio: building } : {}),
-        ...(cleanClassroom ? { aula: cleanClassroom } : {}),
-        ...(place ? { place } : {}),
-      } : {}),
+      ...(eventType === 'materia'
+        ? { ...(building ? { edificio: building } : {}), ...(cleanClassroom ? { aula: cleanClassroom } : {}), ...(place ? { place } : {}) }
+        : {}),
     };
-    setCustomEvents((previous) => [...previous, event]);
+    setCustomEvents((prev) => [...prev, event]);
     const chosen = parseKey(date);
     setYear(chosen.getFullYear());
     setMonth(chosen.getMonth());
@@ -190,199 +212,314 @@ export default function AgendaScreen() {
     setModalOpen(false);
   };
 
-  const styles = makeStyles(colors);
+  const borrar = (ev: AgendaEvent) =>
+    Alert.alert('Eliminar evento', `¿Querés eliminar "${ev.title}"?`, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Eliminar', style: 'destructive', onPress: () => setCustomEvents((prev) => prev.filter((i) => i.id !== ev.id)) },
+    ]);
+
+  const inputStyle = [s.input, { color: C.text, backgroundColor: C.panel2, borderColor: C.border }];
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: colors.bg }]} edges={['top']}>
-      <View style={styles.topbar}>
-        <View style={{ flex: 1 }}>
-          <Text style={[styles.eyebrow, { color: colors.muted }]}>UNM CONNECT</Text>
-          <Text style={[styles.heading, { color: colors.text }]}>Agenda</Text>
-        </View>
-        <Pressable onPress={toggleTheme} style={[styles.themeButton, { backgroundColor: colors.panel2, borderColor: colors.border }]}>
-          <Text style={{ color: colors.text, fontSize: 18 }}>{dark ? '☀' : '☾'}</Text>
-        </Pressable>
-      </View>
+    <View style={[s.screen, { backgroundColor: C.bg }]}>
+      <HeaderMapa />
+      <Text style={[s.h1, { color: W.ink }]}>AGENDA</Text>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <View style={[styles.calendar, { backgroundColor: colors.panel2, borderColor: colors.border }]}>
-          <View style={styles.monthRow}>
-            <Pressable accessibilityLabel="Mes anterior" onPress={() => changeMonth(-1)} style={[styles.arrow, { backgroundColor: colors.panel, borderColor: colors.border }]}>
-              <Text style={[styles.arrowText, { color: colors.accent }]}>‹</Text>
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        {/* calendario */}
+        <View style={[s.cal, { backgroundColor: W.card }]}>
+          <View style={[s.calHead, { backgroundColor: K.headBg }]}>
+            <Pressable accessibilityLabel="Mes anterior" onPress={() => changeMonth(-1)} style={s.arrow}>
+              <Icono src={ICONOS.atras} size={22} tint="#fff" />
             </Pressable>
             <View style={{ alignItems: 'center' }}>
-              <Text style={[styles.monthTitle, { color: colors.text }]}>{MONTHS[month]}</Text>
-              <Text style={[styles.yearTitle, { color: colors.muted }]}>{year}</Text>
+              <Text style={s.month}>{MONTHS[month].toUpperCase()}</Text>
+              <Text style={s.year}>{year}</Text>
             </View>
-            <Pressable accessibilityLabel="Mes siguiente" onPress={() => changeMonth(1)} style={[styles.arrow, { backgroundColor: colors.panel, borderColor: colors.border }]}>
-              <Text style={[styles.arrowText, { color: colors.accent }]}>›</Text>
+            <Pressable accessibilityLabel="Mes siguiente" onPress={() => changeMonth(1)} style={s.arrow}>
+              <Icono src={ICONOS.adelante} size={22} tint="#fff" />
             </Pressable>
           </View>
-          <View style={styles.weekRow}>
-            {WEEKDAYS.map((day) => <Text key={day} style={[styles.weekday, { color: colors.muted }]}>{day}</Text>)}
+
+          <View style={[s.weekRow, { backgroundColor: K.weekBg }]}>
+            {WEEKDAYS.map((d) => (
+              <Text key={d} style={[s.weekday, { color: K.weekTx }]}>{d.toUpperCase()}</Text>
+            ))}
           </View>
-          <View style={styles.grid}>
+
+          <View style={s.grid}>
             {calendarDays.map((day) => {
               const isSelected = selectedDate === day.date;
               const isToday = todayKey === day.date;
               const hasEvent = eventDates.has(day.date);
               return (
-                <Pressable key={day.date} onPress={() => {
-                  if (selectedDate === day.date) setSelectedDate(null);
-                  else {
-                    setSelectedDate(day.date);
-                    const chosen = parseKey(day.date);
-                    setYear(chosen.getFullYear());
-                    setMonth(chosen.getMonth());
-                  }
-                }} style={styles.dayCell}>
-                  <View style={[
-                    styles.dayNumber,
-                    !day.inMonth && { opacity: 0.4 },
-                    isToday && { borderWidth: 2, borderColor: colors.cyan },
-                    isSelected && { backgroundColor: colors.accent, borderColor: colors.accent },
-                  ]}>
-                    <Text style={[styles.dayText, { color: isSelected ? '#fff' : colors.text }]}>{day.day}</Text>
+                <Pressable
+                  key={day.date}
+                  style={s.dayCell}
+                  onPress={() => {
+                    if (selectedDate === day.date) setSelectedDate(null);
+                    else {
+                      setSelectedDate(day.date);
+                      const chosen = parseKey(day.date);
+                      setYear(chosen.getFullYear());
+                      setMonth(chosen.getMonth());
+                    }
+                  }}
+                >
+                  <View style={[s.dayNum, isToday && { borderColor: K.ring }, isSelected && { backgroundColor: K.sel, borderColor: K.sel }]}>
+                    <Text style={[s.dayTxt, { color: isSelected ? '#fff' : day.inMonth ? K.dayTx : K.dayOut }]}>{day.day}</Text>
                   </View>
-                  {hasEvent && <View style={[styles.dot, { backgroundColor: isSelected ? '#fff' : colors.cyan }]} />}
+                  {hasEvent && <View style={[s.mark, { backgroundColor: isSelected ? '#fff' : K.sel }, isSelected && { width: 12, bottom: 5 }]} />}
                 </Pressable>
               );
             })}
           </View>
         </View>
 
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>{selectedDate ? `Eventos del ${parseKey(selectedDate).getDate()} de ${MONTHS[parseKey(selectedDate).getMonth()].toLowerCase()}` : 'Eventos próximos'}</Text>
-          <Pressable onPress={() => selectedDate ? setSelectedDate(null) : setShowAll((v) => !v)}>
-            <Text style={[styles.link, { color: colors.accent }]}>{selectedDate ? 'Ver próximos' : showAll ? 'Ver menos' : 'Ver todos'}</Text>
+        {/* lista */}
+        <View style={s.sectionHead}>
+          <Text style={[s.sectionTitle, { color: W.ink }]}>
+            {selectedDate ? `Eventos del ${parseKey(selectedDate).getDate()} de ${MONTHS[parseKey(selectedDate).getMonth()].toLowerCase()}` : 'Eventos próximos'}
+          </Text>
+          <Pressable onPress={() => (selectedDate ? setSelectedDate(null) : setShowAll((v) => !v))}>
+            <Text style={[s.link, { color: K.link }]}>{selectedDate ? 'VER PRÓXIMOS' : showAll ? 'VER MENOS' : 'VER TODOS'}</Text>
           </Pressable>
         </View>
 
-        <View style={{ gap: 9 }}>
-          {visibleEvents.length ? visibleEvents.map((event) => (
-            <View key={event.id} style={[styles.eventCard, { backgroundColor: colors.panel2, borderColor: colors.border }]}>
-              <View style={[styles.eventIcon, { backgroundColor: event.type === 'aviso' ? (dark ? '#392b20' : '#faf3ea') : colors.card }]}>
-                <Text style={{ fontSize: 20, color: event.type === 'aviso' ? colors.busy : colors.accent }}>{event.type === 'aviso' ? '♢' : '▦'}</Text>
-              </View>
-              <View style={{ flex: 1, gap: 4 }}>
-                <Text style={[styles.eventTitle, { color: colors.text }]}>{event.title}</Text>
-                {event.type === 'materia' && event.modo === 'virtual' && <Text style={[styles.meta, { color: colors.muted }]}>▣ Virtual</Text>}
-                {event.place && <Text style={[styles.meta, { color: colors.accent }]}>⌖ {event.place}</Text>}
-                {(event.start || event.end) && <Text style={[styles.meta, { color: colors.muted }]}>◷ {[event.start, event.end].filter(Boolean).join(' - ')}</Text>}
-              </View>
-              {!selectedDate && <Text style={[styles.dateBadge, { color: colors.muted, backgroundColor: colors.panel, borderColor: colors.border }]}>{parseKey(event.date).getDate()} {SHORT_MONTHS[parseKey(event.date).getMonth()]}</Text>}
-              {event.custom && <Pressable accessibilityLabel="Eliminar evento" onPress={() => Alert.alert('Eliminar evento', `¿Querés eliminar "${event.title}"?`, [
-                { text: 'Cancelar', style: 'cancel' },
-                { text: 'Eliminar', style: 'destructive', onPress: () => setCustomEvents((prev) => prev.filter((item) => item.id !== event.id)) },
-              ])} style={styles.deleteButton}><Text style={{ color: colors.muted, fontSize: 18 }}>×</Text></Pressable>}
-            </View>
-          )) : (
-            <View style={[styles.empty, { borderColor: colors.border }]}>
-              <Text style={{ color: colors.muted, textAlign: 'center' }}>No hay eventos para esta fecha.</Text>
-              <Pressable onPress={() => openForm(selectedDate || todayKey)}><Text style={[styles.link, { color: colors.accent, textAlign: 'center', marginTop: 8 }]}>Agregar un evento</Text></Pressable>
+        <View style={{ gap: 10 }}>
+          {visibleEvents.length ? (
+            visibleEvents.map((ev) => {
+              const abierto = abiertoId === ev.id;
+              const d = parseKey(ev.date);
+              const fechaLarga = `${WEEKDAYS[d.getDay()]} ${d.getDate()} de ${MONTHS[d.getMonth()].toLowerCase()} de ${d.getFullYear()}`;
+              const hayLugar = !!ev.place && ev.modo !== 'virtual';
+              return (
+                <View key={ev.id} style={[s.eventCard, { backgroundColor: W.card }]}>
+                  <Pressable style={s.event} onPress={() => setAbiertoId(abierto ? null : ev.id)}>
+                    <View style={[s.evIco, { backgroundColor: W.sq }]}>
+                      <Icono src={ev.type === 'aviso' ? ICONOS.campana : ICONOS.calendario} size={20} tint={K.evIcoTx} />
+                    </View>
+
+                    <View style={{ flex: 1, gap: 3 }}>
+                      <Text style={[s.evName, { color: W.ink }]}>{ev.title}</Text>
+                      <View style={s.meta}>
+                        {ev.type === 'materia' && ev.modo === 'virtual' && (
+                          <View style={s.metaItem}>
+                            <Icono src={ICONOS.video} size={12} />
+                            <Text style={[s.metaTxt, { color: W.meta }]}>Virtual</Text>
+                          </View>
+                        )}
+                        {hayLugar && (
+                          <View style={[s.loc, { backgroundColor: K.chip }]}>
+                            <Icono src={ICONOS.pin} size={12} />
+                            <Text style={[s.locTxt, { color: K.link }]}>{ev.place}</Text>
+                          </View>
+                        )}
+                        {(ev.start || ev.end) && (
+                          <View style={s.metaItem}>
+                            <Icono src={ICONOS.reloj} size={12} />
+                            <Text style={[s.metaTxt, { color: W.meta }]}>{[ev.start, ev.end].filter(Boolean).join(' - ')}</Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+
+                    {!selectedDate && (
+                      <Text style={[s.when, { backgroundColor: K.chip, color: K.link }]}>
+                        {d.getDate()} {SHORT_MONTHS[d.getMonth()]}
+                      </Text>
+                    )}
+                  </Pressable>
+
+                  {abierto && (
+                    <View style={[s.detalle, { borderTopColor: K.chip }]}>
+                      <View style={s.detRow}>
+                        <Text style={[s.detLbl, { color: W.meta }]}>Fecha</Text>
+                        <Text style={[s.detVal, { color: W.ink }]}>{fechaLarga}</Text>
+                      </View>
+                      {(ev.start || ev.end) && (
+                        <View style={s.detRow}>
+                          <Text style={[s.detLbl, { color: W.meta }]}>Horario</Text>
+                          <Text style={[s.detVal, { color: W.ink }]}>{[ev.start, ev.end].filter(Boolean).join(' a ')} hs</Text>
+                        </View>
+                      )}
+                      {ev.type === 'materia' && (
+                        <View style={s.detRow}>
+                          <Text style={[s.detLbl, { color: W.meta }]}>Modalidad</Text>
+                          <Text style={[s.detVal, { color: W.ink }]}>{ev.modo === 'virtual' ? 'Virtual' : 'Presencial'}</Text>
+                        </View>
+                      )}
+                      {hayLugar && (
+                        <View style={s.detRow}>
+                          <Text style={[s.detLbl, { color: W.meta }]}>Lugar</Text>
+                          <Text style={[s.detVal, { color: W.ink }]}>{ev.place}</Text>
+                        </View>
+                      )}
+                      <View style={s.detBtns}>
+                        {hayLugar && (
+                          <Pressable style={[s.detBtn, { backgroundColor: K.primary }]} onPress={() => router.navigate('/mapa')}>
+                            <Icono src={ICONOS.pin} size={14} tint={K.primaryTx} />
+                            <Text style={[s.detBtnTxt, { color: K.primaryTx }]}>Ver en el mapa</Text>
+                          </Pressable>
+                        )}
+                        {ev.custom && (
+                          <Pressable style={[s.detBtn, { backgroundColor: K.chip }]} onPress={() => borrar(ev)}>
+                            <Icono src={ICONOS.papelera} size={14} tint={K.link} />
+                            <Text style={[s.detBtnTxt, { color: K.link }]}>Eliminar</Text>
+                          </Pressable>
+                        )}
+                      </View>
+                    </View>
+                  )}
+                </View>
+              );
+            })
+          ) : (
+            <View style={[s.empty, { borderColor: W.card }]}>
+              <Text style={{ fontFamily: F.body, color: W.meta, textAlign: 'center', fontSize: 13.5 }}>No hay eventos para esta fecha.</Text>
+              <Pressable onPress={() => openForm(selectedDate || todayKey)}>
+                <Text style={[s.link, { color: K.link, textAlign: 'center', marginTop: 8 }]}>AGREGAR UN EVENTO</Text>
+              </Pressable>
             </View>
           )}
         </View>
 
-        <View style={styles.newEventRow}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Evento nuevo</Text>
-          <Pressable onPress={() => openForm()} style={[styles.addButton, { backgroundColor: colors.accent }]}><Text style={{ color: '#fff', fontSize: 26, lineHeight: 30 }}>+</Text></Pressable>
+        {/* evento nuevo */}
+        <View style={s.newRow}>
+          <Text style={[s.sectionTitle, { color: W.ink }]}>Evento nuevo</Text>
+          <Pressable accessibilityLabel="Crear evento nuevo" onPress={() => openForm()} style={[s.plus, { backgroundColor: W.sq }]}>
+            <Icono src={ICONOS.mas} size={15} tint={K.evIcoTx} />
+          </Pressable>
         </View>
       </ScrollView>
 
+      {/* hoja: evento nuevo */}
       <Modal visible={modalOpen} animationType="slide" transparent onRequestClose={() => setModalOpen(false)}>
-        <View style={styles.modalBackdrop}>
-          <View style={[styles.modalCard, { backgroundColor: colors.panel, borderColor: colors.border }]}>
-            <View style={styles.grab} />
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.backdrop}>
+          <View style={[s.sheet, { backgroundColor: C.bg, borderColor: C.border }]}>
+            <View style={[s.grab, { backgroundColor: C.elevated }]} />
             <ScrollView keyboardShouldPersistTaps="handled">
-              <Text style={[styles.modalTitle, { color: colors.text }]}>Evento nuevo</Text>
-              <Text style={[styles.label, { color: colors.muted }]}>Título</Text>
-              <TextInput value={title} onChangeText={setTitle} maxLength={80} placeholder="Ej: Entrega de trabajo" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.text, backgroundColor: colors.panel2, borderColor: colors.border }]} />
-              <Text style={[styles.label, { color: colors.muted }]}>Tipo</Text>
-              <View style={styles.typeRow}>
-                {([{ value: 'materia', label: 'Materia' }, { value: 'aviso', label: 'Recordatorio' }] as const).map((option) => (
-                  <Pressable key={option.value} onPress={() => setEventType(option.value)} style={[styles.typeOption, { backgroundColor: eventType === option.value ? colors.accent : colors.panel2, borderColor: colors.border }]}>
-                    <Text style={{ color: eventType === option.value ? '#fff' : colors.text, fontWeight: '600' }}>{option.label}</Text>
-                  </Pressable>
-                ))}
+              <Text style={[s.sheetTitle, { color: C.text }]}>Evento nuevo</Text>
+
+              <Text style={[s.label, { color: C.dim }]}>Título</Text>
+              <TextInput value={title} onChangeText={setTitle} maxLength={80} placeholder="Ej: Entrega de trabajo" placeholderTextColor={C.dim} style={inputStyle} />
+
+              <Text style={[s.label, { color: C.dim }]}>Tipo</Text>
+              <View style={s.types}>
+                {([{ value: 'materia', label: 'Materia' }, { value: 'aviso', label: 'Recordatorio' }] as const).map((o) => {
+                  const act = eventType === o.value;
+                  const col = act ? K.primaryTx : C.text;
+                  return (
+                    <Pressable key={o.value} onPress={() => setEventType(o.value)} style={[s.typeOpt, { backgroundColor: act ? K.primary : C.bg, borderColor: act ? K.primary : C.border }]}>
+                      <Icono src={o.value === 'materia' ? ICONOS.calendario : ICONOS.campana} size={16} tint={col} />
+                      <Text style={{ fontFamily: F.bodyBold, fontSize: 12.5, color: col }}>{o.label}</Text>
+                    </Pressable>
+                  );
+                })}
               </View>
-              <Text style={[styles.label, { color: colors.muted }]}>Fecha (AAAA-MM-DD)</Text>
-              <TextInput value={date} onChangeText={setDate} placeholder="2026-10-17" placeholderTextColor={colors.muted} autoCapitalize="none" style={[styles.input, { color: colors.text, backgroundColor: colors.panel2, borderColor: colors.border }]} />
-              <View style={styles.twoColumns}>
+
+              <Text style={[s.label, { color: C.dim }]}>Fecha (AAAA-MM-DD)</Text>
+              <TextInput value={date} onChangeText={setDate} placeholder="2026-10-17" placeholderTextColor={C.dim} autoCapitalize="none" style={inputStyle} />
+
+              <View style={{ flexDirection: 'row', gap: 10 }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.label, { color: colors.muted }]}>Desde (HH:MM)</Text>
-                  <TextInput value={startTime} onChangeText={setStartTime} placeholder="13:30" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.text, backgroundColor: colors.panel2, borderColor: colors.border }]} />
+                  <Text style={[s.label, { color: C.dim }]}>Desde (HH:MM)</Text>
+                  <TextInput value={startTime} onChangeText={setStartTime} placeholder="13:30" placeholderTextColor={C.dim} style={inputStyle} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.label, { color: colors.muted }]}>Hasta (HH:MM)</Text>
-                  <TextInput value={endTime} onChangeText={setEndTime} placeholder="15:00" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.text, backgroundColor: colors.panel2, borderColor: colors.border }]} />
+                  <Text style={[s.label, { color: C.dim }]}>Hasta (HH:MM)</Text>
+                  <TextInput value={endTime} onChangeText={setEndTime} placeholder="15:00" placeholderTextColor={C.dim} style={inputStyle} />
                 </View>
               </View>
-              {eventType === 'materia' && <>
-                <Text style={[styles.label, { color: colors.muted }]}>Edificio (opcional)</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7, paddingBottom: 4 }}>
-                  <Pressable onPress={() => setBuilding('')} style={[styles.buildingChip, { backgroundColor: building === '' ? colors.accent : colors.panel2, borderColor: colors.border }]}><Text style={{ color: building === '' ? '#fff' : colors.text }}>Sin edificio</Text></Pressable>
-                  {BUILDINGS.map((item) => <Pressable key={item} onPress={() => setBuilding(item)} style={[styles.buildingChip, { backgroundColor: building === item ? colors.accent : colors.panel2, borderColor: colors.border }]}><Text style={{ color: building === item ? '#fff' : colors.text }}>{item}</Text></Pressable>)}
-                </ScrollView>
-                <Text style={[styles.label, { color: colors.muted }]}>Aula (opcional)</Text>
-                <TextInput value={classroom} onChangeText={setClassroom} maxLength={20} placeholder="Ej: 5" placeholderTextColor={colors.muted} style={[styles.input, { color: colors.text, backgroundColor: colors.panel2, borderColor: colors.border }]} />
-              </>}
-              <View style={styles.actions}>
-                <Pressable onPress={() => setModalOpen(false)} style={[styles.actionButton, { backgroundColor: colors.panel2 }]}><Text style={{ color: colors.text, fontWeight: '600' }}>Cancelar</Text></Pressable>
-                <Pressable onPress={saveEvent} style={[styles.actionButton, { backgroundColor: colors.accent }]}><Text style={{ color: '#fff', fontWeight: '700' }}>Guardar evento</Text></Pressable>
+
+              {eventType === 'materia' && (
+                <>
+                  <Text style={[s.label, { color: C.dim }]}>Edificio (opcional)</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 7, paddingBottom: 4 }}>
+                    {['', ...BUILDINGS].map((b) => {
+                      const act = building === b;
+                      return (
+                        <Pressable key={b || 'ninguno'} onPress={() => setBuilding(b)} style={[s.chipB, { backgroundColor: act ? K.primary : C.panel2, borderColor: act ? K.primary : C.border }]}>
+                          <Text style={{ fontFamily: F.bodyMed, color: act ? K.primaryTx : C.text }}>{b || 'Sin edificio'}</Text>
+                        </Pressable>
+                      );
+                    })}
+                  </ScrollView>
+                  <Text style={[s.label, { color: C.dim }]}>Aula (opcional)</Text>
+                  <TextInput value={classroom} onChangeText={setClassroom} maxLength={20} placeholder="Ej: 5" placeholderTextColor={C.dim} style={inputStyle} />
+                </>
+              )}
+
+              <View style={s.actions}>
+                <Pressable onPress={() => setModalOpen(false)} style={[s.btn, { backgroundColor: C.panel2, flex: 1 }]}>
+                  <Text style={{ fontFamily: F.bold, fontSize: 15, color: C.text }}>Cancelar</Text>
+                </Pressable>
+                <Pressable onPress={saveEvent} style={[s.btn, { backgroundColor: K.primary, flex: 1.4 }]}>
+                  <Text style={{ fontFamily: F.bold, fontSize: 15, color: K.primaryTx }}>Guardar evento</Text>
+                </Pressable>
               </View>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
-function makeStyles(c: Record<string, string>) {
+function makeStyles() {
   return StyleSheet.create({
-    safe: { flex: 1 },
-    topbar: { paddingHorizontal: 18, paddingTop: 8, paddingBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 12 },
-    eyebrow: { fontSize: 10, letterSpacing: 1.5, fontWeight: '700' },
-    heading: { fontSize: 25, fontWeight: '800', marginTop: 2 },
-    themeButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-    scroll: { paddingHorizontal: 16, paddingBottom: 28 },
-    calendar: { borderWidth: 1, borderRadius: 18, overflow: 'hidden' },
-    monthRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingTop: 10, paddingBottom: 2 },
-    arrow: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
-    arrowText: { fontSize: 30, lineHeight: 32, marginTop: -3 },
-    monthTitle: { fontSize: 19, fontWeight: '700' },
-    yearTitle: { fontSize: 12, marginTop: 2 },
-    weekRow: { flexDirection: 'row', paddingHorizontal: 8, paddingTop: 8 },
-    weekday: { width: `${100 / 7}%`, textAlign: 'center', fontSize: 11, fontWeight: '600' },
-    grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 8, paddingTop: 4, paddingBottom: 10 },
-    dayCell: { width: `${100 / 7}%`, height: 42, alignItems: 'center', justifyContent: 'center' },
-    dayNumber: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
-    dayText: { fontSize: 14, fontWeight: '500' },
-    dot: { position: 'absolute', bottom: 1, width: 5, height: 5, borderRadius: 3 },
-    sectionHeader: { marginHorizontal: 2, marginTop: 20, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
-    sectionTitle: { fontSize: 16, fontWeight: '700', flexShrink: 1 },
-    link: { fontSize: 12, fontWeight: '700' },
-    eventCard: { borderWidth: 1, borderRadius: 14, padding: 10, flexDirection: 'row', alignItems: 'center', gap: 10 },
-    eventIcon: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-    eventTitle: { fontSize: 13.5, lineHeight: 19, fontWeight: '600' },
-    meta: { fontSize: 11.5 },
-    dateBadge: { borderWidth: 1, borderRadius: 10, overflow: 'hidden', paddingHorizontal: 7, paddingVertical: 4, fontSize: 10.5, fontWeight: '600' },
-    deleteButton: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center' },
+    screen: { flex: 1 },
+    h1: { fontFamily: F.h1, fontSize: 22, letterSpacing: 0.3, paddingTop: 16, paddingHorizontal: 18, paddingBottom: 14 },
+
+    cal: { borderRadius: 16, overflow: 'hidden' },
+    calHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 10, paddingVertical: 6 },
+    arrow: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+    month: { fontFamily: F.h1, fontSize: 20, letterSpacing: 0.5, color: '#fff' },
+    year: { fontFamily: F.body, fontSize: 10.5, color: 'rgba(255,255,255,0.75)', marginTop: 1 },
+    weekRow: { flexDirection: 'row', paddingHorizontal: 8, paddingVertical: 5 },
+    weekday: { width: `${100 / 7}%`, textAlign: 'center', fontFamily: F.bold, fontSize: 11.5 },
+    grid: { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 8, paddingTop: 6, paddingBottom: 12 },
+    dayCell: { width: `${100 / 7}%`, height: 40, alignItems: 'center', justifyContent: 'center' },
+    dayNum: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
+    dayTxt: { fontFamily: F.bodyMed, fontSize: 13.5 },
+    mark: { position: 'absolute', bottom: 2, width: 16, height: 2.5, borderRadius: 2 },
+
+    sectionHead: { marginHorizontal: 2, marginTop: 20, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
+    sectionTitle: { fontFamily: F.bold, fontSize: 15, flexShrink: 1 },
+    link: { fontFamily: F.bold, fontSize: 11 },
+
+    event: { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, paddingVertical: 8, paddingHorizontal: 10 },
+    eventCard: { borderRadius: 12, overflow: 'hidden' },
+    detalle: { borderTopWidth: 1, marginHorizontal: 10, paddingVertical: 10, gap: 6 },
+    detRow: { flexDirection: 'row', gap: 10 },
+    detLbl: { width: 78, fontFamily: F.semi, fontSize: 11.5 },
+    detVal: { flex: 1, fontFamily: F.body, fontSize: 12.5 },
+    detBtns: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+    detBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
+    detBtnTxt: { fontFamily: F.bodyBold, fontSize: 11.5 },
+    evIco: { width: 36, height: 36, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
+    evName: { fontFamily: F.semi, fontSize: 12.5, lineHeight: 17 },
+    meta: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: 12, rowGap: 3 },
+    metaItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+    metaTxt: { fontFamily: F.body, fontSize: 11 },
+    loc: { flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 999, paddingVertical: 2, paddingLeft: 7, paddingRight: 9 },
+    locTxt: { fontFamily: F.bodyBold, fontSize: 11 },
+    when: { fontFamily: F.bold, fontSize: 10, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 999, overflow: 'hidden' },
     empty: { padding: 22, borderWidth: 1, borderStyle: 'dashed', borderRadius: 14 },
-    newEventRow: { marginTop: 24, marginHorizontal: 2, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-    addButton: { width: 42, height: 42, borderRadius: 21, alignItems: 'center', justifyContent: 'center' },
-    modalBackdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(11,20,36,0.55)' },
-    modalCard: { maxHeight: '92%', borderTopLeftRadius: 22, borderTopRightRadius: 22, borderWidth: 1, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 28 },
-    grab: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, backgroundColor: c.card, marginBottom: 12 },
-    modalTitle: { fontSize: 20, fontWeight: '800', marginBottom: 14 },
-    label: { fontSize: 12, fontWeight: '600', marginBottom: 6, marginTop: 10 },
-    input: { minHeight: 44, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14 },
-    typeRow: { flexDirection: 'row', gap: 8 },
-    typeOption: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 11, alignItems: 'center' },
-    twoColumns: { flexDirection: 'row', gap: 10 },
-    buildingChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8 },
+
+    newRow: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 28, marginHorizontal: 2 },
+    plus: { width: 26, height: 26, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+
+    backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(11,20,36,0.55)' },
+    sheet: { maxHeight: '92%', borderTopLeftRadius: 22, borderTopRightRadius: 22, borderWidth: 1, borderBottomWidth: 0, paddingHorizontal: 18, paddingTop: 8, paddingBottom: 24 },
+    grab: { alignSelf: 'center', width: 38, height: 4, borderRadius: 2, marginBottom: 12, marginTop: 1 },
+    sheetTitle: { fontFamily: F.h1, fontSize: 18, marginBottom: 14 },
+    label: { fontFamily: F.semi, fontSize: 13, marginBottom: 6, marginTop: 10 },
+    input: { minHeight: 46, borderWidth: 1, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 9, fontFamily: F.bodyMed, fontSize: 14 },
+    types: { flexDirection: 'row', gap: 8 },
+    typeOpt: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
+    chipB: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8 },
     actions: { flexDirection: 'row', gap: 10, marginTop: 22, marginBottom: 8 },
-    actionButton: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 13, borderRadius: 12 },
+    btn: { alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14 },
   });
-  }
+}
