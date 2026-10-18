@@ -1,4 +1,6 @@
-import { SCHEDULE } from '../data/edificios';
+import { AMENITIES, EDIFICIOS, SCHEDULE, type Comodidades } from '../data/edificios';
+import { PROFES } from '../data/profes';
+import type { Franja, Profe } from './profes';
 
 /* ============================================================
    Conexión con el backend (Railway + MySQL).
@@ -85,3 +87,59 @@ async function conRespaldo<T>(ruta: string, normalizar: (r: unknown) => T[] | nu
 
 export const cargarClasesHoy = () => conRespaldo('/clases/hoy', normalizarClases, clasesEjemplo);
 export const cargarNovedades = () => conRespaldo('/novedades', normalizarNovedades, () => NOVEDADES_EJEMPLO);
+/* ---------- Profesores: GET /profesores ---------- */
+const idEdificioPorNombre = (nombre: string): string | null =>
+  Object.entries(EDIFICIOS).find(([, e]) => e.name.toLowerCase() === nombre.toLowerCase())?.[0] ?? null;
+
+function normalizarProfes(raw: unknown): Profe[] | null {
+  if (!Array.isArray(raw)) return null;
+  return raw
+    .map((r: any): Profe => ({
+      id: txt(r.id),
+      nombre: txt(r.nombre),
+      materias4: Array.isArray(r.materias4) ? r.materias4.map(txt) : [],
+      franjas: (Array.isArray(r.franjas) ? r.franjas : []).map((f: any): Franja => ({
+        dias: Array.isArray(f.dias) ? f.dias.map(Number) : [],
+        desde: txt(f.desde).slice(0, 5),
+        hasta: txt(f.hasta).slice(0, 5),
+        edificio: txt(f.edificio),
+        edificioId: idEdificioPorNombre(txt(f.edificio)),   // el id del plano, no el de la base
+        aula: f.aula ? txt(f.aula) : null,
+        lugar: txt(f.lugar),
+        extra: Array.isArray(f.extra) ? f.extra.map(txt) : [],
+        materia: txt(f.materia),
+        comision: txt(f.comision),
+        anio: Number(f.anio) || 0,
+        modo: f.modo === 'virtual' ? 'virtual' : 'presencial',
+        alterna: !!f.alterna,
+      })),
+    }))
+    .filter((p) => p.nombre && p.franjas.length > 0);
+}
+
+export const cargarProfesores = () => conRespaldo('/profesores', normalizarProfes, () => PROFES);
+
+/* ---------- Aulas (comodidades): GET /aulas ---------- */
+// Devuelve las comodidades locales, pisadas por lo que tenga el servidor.
+export async function cargarAulas(): Promise<Record<string, Comodidades>> {
+  const base: Record<string, Comodidades> = { ...AMENITIES };
+  try {
+    const raw = await pedir('/aulas');
+    if (!Array.isArray(raw)) return base;
+    for (const r of raw as any[]) {
+      const id = txt(r.aula_id);
+      if (!id) continue;
+      const loc = base[id];
+      base[id] = {
+        enchufes: r.enchufes ?? loc?.enchufes ?? 0,
+        wifi: r.wifi ?? loc?.wifi ?? false,
+        proyector: r.proyector ?? loc?.proyector ?? false,
+        accesible: r.accesible ?? loc?.accesible ?? false,
+        capacidad: r.capacidad ?? loc?.capacidad ?? 0,
+      };
+    }
+  } catch (e) {
+    if (__DEV__) console.log('[api] /aulas no disponible, uso datos locales:', String(e));
+  }
+  return base;
+}

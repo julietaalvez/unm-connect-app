@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Image,
   NativeScrollEvent,
@@ -12,7 +12,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
-import { AMENITIES, EDIFICIOS, NOTES, Piso, SCHEDULE } from '../data/edificios';
+import { AMENITIES, Comodidades, EDIFICIOS, NOTES, Piso, SCHEDULE } from '../data/edificios';
+import { cargarAulas } from '../lib/api';
 import {
   Ruta,
   Ubicacion,
@@ -366,7 +367,13 @@ function FichaEspacio({
   const label = labelFor(id) || id;
   const clase = SCHEDULE[id];
   const nota = NOTES[id];
-  const am = AMENITIES[id];
+       const [todas, setTodas] = useState<Record<string, Comodidades>>(AMENITIES);
+     useEffect(() => {
+       let vivo = true;
+       cargarAulas().then((r) => vivo && setTodas(r));
+       return () => { vivo = false; };
+     }, []);
+     const am = todas[id];
 
   return (
     <View>

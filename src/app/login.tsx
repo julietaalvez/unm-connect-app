@@ -1,13 +1,15 @@
 import { useAppTheme } from '@/context/theme-context';
 import { useState } from 'react';
 import {
-    Image,
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Image,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
+import { API_URL } from '../lib/api';
+import { guardarUsuario } from '../lib/sesion';
 
 export default function LoginScreen({
   onLoginSuccess,
@@ -33,14 +35,29 @@ export default function LoginScreen({
     link: isDark ? '#6fa3f7' : '#1c3d6e',
   };
 
-  const handleLogin = () => {
-  if (!usuario || !contrasena) {
-    setError('Completá usuario y contraseña.');
-    return;
-  }
-  setError('');
-  onLoginSuccess?.();
-};
+  const handleLogin = async () => {
+    if (!usuario || !contrasena) {
+      setError('Completá email y contraseña.');
+      return;
+    }
+    setError('');
+    try {
+      const res = await fetch(`${API_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: usuario.trim(), contrasena }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'No se pudo iniciar sesión.');
+        return;
+      }
+      guardarUsuario(data.usuario);
+      onLoginSuccess?.();
+    } catch {
+      setError('No hay conexión con el servidor. Probá de nuevo.');
+    }
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -56,7 +73,7 @@ export default function LoginScreen({
 
       <TextInput
         style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
-        placeholder="Ingresar usuario"
+        placeholder="Email"
         placeholderTextColor={colors.placeholder}
         autoCapitalize="none"
         value={usuario}

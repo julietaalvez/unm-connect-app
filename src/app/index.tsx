@@ -8,14 +8,15 @@ import HeaderMapa from '../components/HeaderMapa';
 import {
   ClaseHoy,
   Fuente,
+  NOVEDADES_EJEMPLO,
   Novedad,
   cargarClasesHoy,
   cargarNovedades,
   clasesEjemplo,
-  NOVEDADES_EJEMPLO,
 } from '../lib/api';
 import { aMinutos, contarAulasLibres, minutosDe } from '../lib/inicio';
 import { labelFor } from '../lib/interior';
+import { usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
 import { Wf, useWf } from '../lib/wf';
 
@@ -27,8 +28,7 @@ const IC = {
   profesores: require('../../assets/icons/profesores.png'),
 };
 
-// TODO: tomarlo del perfil / sesión cuando exista
-const NOMBRE = 'Juan';
+const primerNombre = () => (usuarioActual()?.nombre ?? 'estudiante').split(' ')[0];
 
 // Fuentes (se cargan en _layout.tsx). Si no están, usa la del sistema.
 const F = {
@@ -119,7 +119,7 @@ export default function InicioScreen() {
 
       {/* saludo + campana */}
       <View style={s.homeHead}>
-        <Text style={s.h1}>{`HOLA ${NOMBRE.toUpperCase()}!`}</Text>
+        <Text style={s.h1}>{`HOLA ${primerNombre().toUpperCase()}!`}</Text>
         <Pressable
           style={s.plainBtn}
           accessibilityLabel="Notificaciones"

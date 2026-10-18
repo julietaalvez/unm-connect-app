@@ -5,6 +5,7 @@ import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 
 import HeaderMapa from '../components/HeaderMapa';
 import { FUENTE, PROFES } from '../data/profes';
+import { cargarProfesores } from '../lib/api';
 import {
   DIAS, DIAS_CORTO, Estado, Franja, GRUPOS, Momento, ORDEN_SEMANA, Profe,
   ahoraReal, estado, fmtMin, hm, iniciales, lugarTxt, norm, toMin,
@@ -38,6 +39,11 @@ export default function ProfesoresScreen() {
   const [simAbierto, setSimAbierto] = useState(false);
   const [sel, setSel] = useState<Profe | null>(null);
   const [, setTic] = useState(0);
+  const [profes, setProfes] = useState<Profe[]>(PROFES);
+
+     useEffect(() => {
+       cargarProfesores().then((r) => setProfes(r.datos));
+     }, []);
 
   // refresca el estado cada minuto
   useEffect(() => {
@@ -47,7 +53,7 @@ export default function ProfesoresScreen() {
 
   const t = sim ?? ahoraReal();
 
-  const todos = useMemo(() => PROFES.map((p) => ({ p, e: estado(p, t) })), [t.day, t.min]);
+  const todos = useMemo(() => profes.map((p) => ({ p, e: estado(p, t) })), [profes, t.day, t.min]);
   const q = norm(query.trim());
   const buscados = todos.filter(
     (x) => !q || norm(x.p.nombre).includes(q) || x.p.franjas.some((f) => norm(f.materia).includes(q))
