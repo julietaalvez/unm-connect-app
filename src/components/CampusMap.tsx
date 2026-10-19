@@ -8,6 +8,8 @@ import { GATE_LABELS, PuertaCampus, rutaCampus } from '../lib/campusRuta';
 import { Paso, rutaToPath } from '../lib/interior';
 import { Colores, useTema } from '../lib/tema';
 import HeaderMapa from './HeaderMapa';
+import { aSvg, puertaMasCercana } from '../lib/calibracion';
+import { useUbicacion } from '../lib/ubicacion';
 
 const VB_X = -70;
 const VB_W = 1270;
@@ -42,6 +44,18 @@ function idInterior(id: string) {
   );
 }
 
+const ROMANOS: Record<string, string> = { '1': 'i', '2': 'ii', '3': 'iii', '4': 'iv', '5': 'v' };
+
+// minúsculas, sin tildes, y 1/2/3 -> i/ii/iii
+function norm(t: string) {
+  return t
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\b\d+\b/g, (n) => ROMANOS[n] ?? n)
+    .trim();
+}
+
 // texto con halo para que se lea sobre cualquier color
 function Cartel({ C, x, y, size, weight = '700', rotation, origin, children }: any) {
   return (
@@ -68,6 +82,7 @@ export default function CampusMap({ onEnterBuilding }: Props) {
   const [origen, setOrigen] = useState<PuertaCampus>('mitre');
   const [whereOpen, setWhereOpen] = useState(false);
   const [query, setQuery] = useState('');
+  const [sinResultado, setSinResultado] = useState(false);
   const [ruta, setRuta] = useState<RutaState>(null);
   const [errorRuta, setErrorRuta] = useState<string | null>(null);
 
@@ -80,6 +95,21 @@ export default function CampusMap({ onEnterBuilding }: Props) {
   const mapWidth = cardW * zoom; // el mapa es más ancho que la tarjeta: se desliza con el dedo
   const mapHeight = (mapWidth * VB_H) / VB_W;
   const fontSize = LABEL_PX / (mapWidth / VB_W);
+  const radioPunto = 9 / (mapWidth / VB_W);
+
+  const ub = useUbicacion();
+  const miPos = useMemo(() => (ub.punto ? aSvg(ub.punto) : null), [ub.punto]);
+  const cerca = useMemo(() => (miPos ? puertaMasCercana(miPos) : null), [miPos]);
+  const lejos = !!cerca && cerca.metros > 1500;
+  const textoGps =
+    ub.estado === 'denegado' ? 'Ubicación desactivada: habilitala en Ajustes para verte en el mapa.'
+    : ub.estado === 'apagado' ? 'Activá el GPS del celular para verte en el mapa.'
+    : ub.estado === 'error' ? 'No pudimos obtener tu ubicación.'
+    : !ub.punto ? 'Buscando tu ubicación…'
+    : !miPos ? 'Falta calibrar el mapa (ver calibracion.ts).'
+    : lejos ? 'Estás lejos del campus.'
+    : cerca ? `Estás a ${Math.round(cerca.metros)} m de ${GATE_LABELS[cerca.id]}`
+    : '';
 
   // centrar el mapa al abrir
   useEffect(() => {
@@ -110,16 +140,36 @@ export default function CampusMap({ onEnterBuilding }: Props) {
   function elegir(b: Building) {
     setSelected(b);
     limpiarRuta();
+    // centra el mapa sobre el edificio
+    const c = centros[b.id];
+    if (c) {
+      const x = ((c.x - VB_X) / VB_W) * mapWidth - cardW / 2;
+      mapScrollRef.current?.scrollTo({ x: Math.max(0, x), animated: true });
+    }
     // baja hasta la ficha del edificio
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
   function buscar(texto: string) {
     setQuery(texto);
-    const q = texto.trim().toLowerCase();
-    if (!q) return;
-    const b = BUILDINGS.find((x) => x.label.toLowerCase().includes(q));
-    if (b) elegir(b);
+    const q = norm(texto);
+    if (!q) {
+      setSinResultado(false);
+      return;
+    }
+    // 1) el nombre del edificio aparece dentro de lo escrito ("aula 5 daract 2" -> Daract II)
+    const dentro = BUILDINGS.filter((b) => q.includes(norm(b.label))).sort(
+      (a, b) => b.label.length - a.label.length
+    )[0];
+    // 2) lo escrito es parte del nombre ("dorr" -> Dorrego II)
+    const parcial = BUILDINGS.find((b) => norm(b.label).includes(q));
+    const b = dentro ?? parcial;
+    if (b) {
+      setSinResultado(false);
+      elegir(b);
+    } else {
+      setSinResultado(true);
+    }
   }
 
   function comoLlegar() {
@@ -159,6 +209,9 @@ export default function CampusMap({ onEnterBuilding }: Props) {
           style={s.searchInput}
         />
       </View>
+      {sinResultado && (
+        <Text style={[s.subtitle, { marginTop: -6 }]}>No encontramos ese edificio.</Text>
+      )}
 
       {/* estás en */}
       <Pressable style={s.whereBtn} onPress={() => setWhereOpen((o) => !o)}>
@@ -188,6 +241,21 @@ export default function CampusMap({ onEnterBuilding }: Props) {
           })}
         </View>
       )}
+
+      <View style={s.gpsRow}>
+        <Text style={s.gpsTxt}>{textoGps}</Text>
+        {cerca && !lejos && (
+          <Pressable
+            style={s.gpsBtn}
+            onPress={() => {
+              setOrigen(cerca.id);
+              limpiarRuta();
+            }}
+          >
+            <Text style={s.gpsBtnTxt}>Usar mi ubicación</Text>
+          </Pressable>
+        )}
+      </View>
 
       {/* mapa */}
       <View style={s.mapCard} onLayout={(e) => setCardW(e.nativeEvent.layout.width - 2)}>
@@ -256,6 +324,13 @@ export default function CampusMap({ onEnterBuilding }: Props) {
             <Cartel C={C} x={corvTx} y={487} size={gateSize} weight="800" rotation={-90} origin={`${corvTx}, 487`}>
               {GATE_LABELS.corvalan}
             </Cartel>
+
+            {miPos && !lejos && (
+              <>
+                <Circle cx={miPos.x} cy={miPos.y} r={radioPunto * 2.2} fill="#4f8ef7" opacity={0.25} pointerEvents="none" />
+                <Circle cx={miPos.x} cy={miPos.y} r={radioPunto} fill="#2f6fe0" stroke="#ffffff" strokeWidth={radioPunto * 0.35} pointerEvents="none" />
+              </>
+            )}
           </Svg>
         </ScrollView>
 
@@ -356,6 +431,10 @@ const makeStyles = (C: Colores) =>
     whereBtn: { marginHorizontal: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 10 },
     whereList: { marginHorizontal: 18, marginBottom: 10, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 8 },
     whereOpt: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 9 },
+    gpsRow: { marginHorizontal: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
+    gpsTxt: { flex: 1, fontSize: 12, color: C.dim },
+    gpsBtn: { backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+    gpsBtnTxt: { color: C.text, fontSize: 12, fontWeight: '700' },
     dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
     mapCard: { marginHorizontal: 18, marginBottom: 12, backgroundColor: C.mapBg, borderRadius: 22, borderWidth: 1, borderColor: C.mapBorder, overflow: 'hidden', paddingTop: 12 },
     floorLabelRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, marginBottom: 6 },

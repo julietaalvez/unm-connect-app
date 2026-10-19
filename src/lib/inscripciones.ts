@@ -9,6 +9,26 @@ import { usuarioActual } from './sesion';
 type Profe = (typeof PROFES)[number];
 export type Franja = Profe['franjas'][number];
 
+/* ---------- períodos (cuatrimestres) ---------- */
+// Para sumar un cuatrimestre nuevo: agregá una línea acá (los meses van de 0 a 11).
+export type Periodo = { id: string; nombre: string; cuatri: 1 | 2; inicio: Date; fin: Date };
+
+export const PERIODOS: Periodo[] = [
+  { id: '2026-2', nombre: '2.º cuatrimestre 2026', cuatri: 2, inicio: new Date(2026, 7, 3), fin: new Date(2026, 11, 4) },
+  // Año que viene (ajustá las fechas reales cuando las publiquen):
+  // { id: '2027-1', nombre: '1.er cuatrimestre 2027', cuatri: 1, inicio: new Date(2027, 2, 15), fin: new Date(2027, 6, 10) },
+];
+
+/** El período en curso. Si estás entre dos cuatrimestres, devuelve el próximo. */
+export function periodoActual(fecha: Date = new Date()): Periodo | null {
+  const dia = new Date(fecha.getFullYear(), fecha.getMonth(), fecha.getDate());
+  const ordenados = [...PERIODOS].sort((a, b) => a.inicio.getTime() - b.inicio.getTime());
+  return ordenados.find((p) => dia <= p.fin) ?? ordenados[ordenados.length - 1] ?? null;
+}
+
+// Una franja sin cuatrimestre (0 o vacío) se muestra siempre; si lo trae, solo en ese cuatri.
+const esDelPeriodo = (f: Franja, p: Periodo) => !f.cuatrimestre || f.cuatrimestre === p.cuatri;
+
 /** Una materia + comisión, con todos sus horarios y docentes */
 export type Cursada = {
   clave: string; // "Materia|comisión": identifica la cursada
@@ -32,12 +52,13 @@ export function useCatalogo(): Profe[] {
   return catalogo;
 }
 
-/** Junta las franjas de todos los docentes en cursadas (materia + comisión) */
-export function armarCursadas(profes: Profe[]): Cursada[] {
+/** Junta las franjas de todos los docentes en cursadas (materia + comisión), solo del período indicado */
+export function armarCursadas(profes: Profe[], periodo: Periodo | null = periodoActual()): Cursada[] {
   const mapa = new Map<string, Cursada & { vistas: Set<string> }>();
   for (const p of profes) {
     for (const f of p.franjas) {
       if (!f.materia) continue;
+      if (periodo && !esDelPeriodo(f, periodo)) continue;
       const clave = `${f.materia}|${f.comision}`;
       let c = mapa.get(clave);
       if (!c) {
@@ -148,7 +169,9 @@ export function useInscripciones() {
   const claves = useMemo(() => new Set(actual), [actual]);
   return { claves, inscribir, quitar };
 }
-/* ---------- calendario del cuatrimestre ---------- */
+
+/* ---------- calendario ---------- */
+// Cargá acá los feriados de cada año (formato AAAA-MM-DD).
 export const FERIADOS: Record<string, string> = {
   '2026-10-12': 'Feriado: Día del Respeto a la Diversidad Cultural',
   '2026-11-23': 'Feriado: Día de la Soberanía Nacional (trasladado)',
@@ -156,16 +179,15 @@ export const FERIADOS: Record<string, string> = {
   '2026-12-08': 'Feriado: Inmaculada Concepción de María',
   '2026-12-25': 'Feriado: Navidad',
 };
-const INICIO = new Date(2026, 7, 3);
-const FIN = new Date(2026, 11, 4);
 const pad2 = (n: number) => String(n).padStart(2, '0');
 
 /** ¿Esta franja se cursa ese día? (cuenta feriados, fechas del cuatrimestre y "semana por medio") */
 function ocurreEn(f: Franja, dia: Date): boolean {
-  if (dia < INICIO || dia > FIN) return false;
+  const p = PERIODOS.find((x) => dia >= x.inicio && dia <= x.fin);
+  if (!p || !esDelPeriodo(f, p)) return false;
   const key = `${dia.getFullYear()}-${pad2(dia.getMonth() + 1)}-${pad2(dia.getDate())}`;
   if (FERIADOS[key] || !f.dias.includes(dia.getDay())) return false;
-  if (f.alterna && Math.floor((dia.getTime() - INICIO.getTime()) / 604800000) % 2 !== 0) return false;
+  if (f.alterna && Math.floor((dia.getTime() - p.inicio.getTime()) / 604800000) % 2 !== 0) return false;
   return true;
 }
 

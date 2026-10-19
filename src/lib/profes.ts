@@ -16,6 +16,7 @@ export type Franja = {
   anio: number;
   modo: Modo;
   alterna: boolean;          // presencial semana por medio
+  cuatrimestre?: number;     // 1 o 2; 0 o vacío = se muestra siempre
 };
 
 export type Profe = { id: string; nombre: string; materias4: string[]; franjas: Franja[] };

@@ -112,6 +112,7 @@ function normalizarProfes(raw: unknown): Profe[] | null {
         anio: Number(f.anio) || 0,
         modo: f.modo === 'virtual' ? 'virtual' : 'presencial',
         alterna: !!f.alterna,
+        cuatrimestre: Number(f.cuatrimestre) || 0,
       })),
     }))
     .filter((p) => p.nombre && p.franjas.length > 0);

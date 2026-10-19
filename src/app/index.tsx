@@ -1,7 +1,7 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 
 import HeaderMapa from '../components/HeaderMapa';
 import ProfesoresScreen from '../components/ProfesoresScreen';
@@ -51,6 +51,8 @@ const DIAS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', '
 const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
 const sin0 = (h: string) => h.replace(/^0/, '');
 
+const ANCHO_WEB = 900; // a partir de este ancho se usan dos columnas
+
 const Mini = ({ src }: { src: number }) => <Image source={src} style={{ width: 12, height: 12 }} resizeMode="contain" />;
 
 export default function InicioScreen() {
@@ -58,6 +60,8 @@ export default function InicioScreen() {
   const { W } = useWf();
   const s = useMemo(() => makeStyles(W), [W]);
   const router = useRouter();
+  const { width } = useWindowDimensions();
+  const ancho = width >= ANCHO_WEB;
 
   // Arranca con datos de ejemplo para que la pantalla nunca quede vacía
   const [clases, setClases] = useState<ClaseHoy[]>(() => clasesEjemplo());
@@ -90,12 +94,12 @@ export default function InicioScreen() {
   const { total, libres } = contarAulasLibres(clases, min);
 
   const catalogo = useCatalogo();
-const { claves } = useInscripciones();
-const hoyKey = ahora.toDateString();
-const miDia = useMemo(
-  () => clasesDelDia(armarCursadas(catalogo).filter((c) => claves.has(c.clave)), new Date()),
-  [catalogo, claves, hoyKey]
-);
+  const { claves } = useInscripciones();
+  const hoyKey = ahora.toDateString();
+  const miDia = useMemo(
+    () => clasesDelDia(armarCursadas(catalogo).filter((c) => claves.has(c.clave)), new Date()),
+    [catalogo, claves, hoyKey]
+  );
   const quedan = miDia.some((c) => aMinutos(c.hasta) > min);
   const fecha = `${DIAS[ahora.getDay()]} ${ahora.getDate()} de ${MESES[ahora.getMonth()]}`;
   const subtitulo = miDia.length && !quedan ? `Ya terminaste por hoy · ${fecha}` : `Hoy, ${fecha}`;
@@ -107,140 +111,153 @@ const miDia = useMemo(
       contentInsetAdjustmentBehavior="never"
       refreshControl={<RefreshControl refreshing={false} onRefresh={cargar} tintColor={C.dim} />}
     >
-      <HeaderMapa />
+      <View style={s.pagina}>
+        <HeaderMapa />
 
-      {/* saludo + campana */}
-      <View style={s.homeHead}>
-        <Text style={s.h1}>{`HOLA ${primerNombre().toUpperCase()}!`}</Text>
-        <Pressable
-          style={s.plainBtn}
-          accessibilityLabel="Notificaciones"
-          onPress={() => Alert.alert('Notificaciones', 'No tenés notificaciones nuevas')}
-        >
-          <Image source={IC.campana} style={s.campana} resizeMode="contain" />
-        </Pressable>
-      </View>
-
-      {/* MI DÍA */}
-      <View style={s.mdCard}>
-        <Text style={s.mdTitulo}>MI DÍA</Text>
-        <Text style={s.mdSub}>{subtitulo}</Text>
-
-       {claves.size === 0 ? (
-  <View>
-    <Text style={s.mdNone}>Todavía no agregaste tus materias.</Text>
-    <Pressable style={s.mdBtn} onPress={() => router.navigate('/perfil')}>
-      <Text style={s.mdBtnTxt}>Agregar materias</Text>
-    </Pressable>
-  </View>
-) : miDia.length === 0 ? (
-  <Text style={s.mdNone}>Hoy no tenés clases.</Text>
-) : (
-  miDia.map((c, i) => {
-    const enCurso = aMinutos(c.desde) <= min && min < aMinutos(c.hasta);
-    const lugar = (c.aula && labelFor(c.aula)) || c.lugar;
-    return (
-      <Pressable
-        key={`${c.materia}-${c.desde}-${i}`}
-        style={({ pressed }) => [s.mdItem, enCurso && s.mdItemAhora, pressed && { transform: [{ scale: 0.99 }] }]}
-        onPress={() => {
-          if (!c.virtual) router.navigate('/mapa');
-        }}
-      >
-        <View style={s.mdIc}>
-          <Image source={IC.clase} style={s.mdIcImg} resizeMode="contain" />
+        {/* saludo + campana */}
+        <View style={s.homeHead}>
+          <Text style={s.h1}>{`HOLA ${primerNombre().toUpperCase()}!`}</Text>
+          <Pressable
+            style={s.plainBtn}
+            accessibilityLabel="Notificaciones"
+            onPress={() => Alert.alert('Notificaciones', 'No tenés notificaciones nuevas')}
+          >
+            <Image source={IC.campana} style={s.campana} resizeMode="contain" />
+          </Pressable>
         </View>
-        <View style={{ flex: 1, minWidth: 0 }}>
-          <Text style={s.mdN}>{c.materia}</Text>
-          <View style={s.mdM}>
-            <View style={s.mdMItem}>
-              <Mini src={c.virtual ? IC.video : IC.pin} />
-              <Text style={s.mdMTxt}>{c.virtual ? 'Virtual' : lugar}</Text>
+
+        <View style={ancho ? s.cols : undefined}>
+          {/* columna izquierda: Mi día + banner */}
+          <View style={ancho ? s.colIzq : undefined}>
+            {/* MI DÍA */}
+            <View style={s.mdCard}>
+              <Text style={s.mdTitulo}>MI DÍA</Text>
+              <Text style={s.mdSub}>{subtitulo}</Text>
+
+              {claves.size === 0 ? (
+                <View>
+                  <Text style={s.mdNone}>Todavía no agregaste tus materias.</Text>
+                  <Pressable style={s.mdBtn} onPress={() => router.navigate('/perfil')}>
+                    <Text style={s.mdBtnTxt}>Agregar materias</Text>
+                  </Pressable>
+                </View>
+              ) : miDia.length === 0 ? (
+                <Text style={s.mdNone}>Hoy no tenés clases.</Text>
+              ) : (
+                miDia.map((c, i) => {
+                  const enCurso = aMinutos(c.desde) <= min && min < aMinutos(c.hasta);
+                  const lugar = (c.aula && labelFor(c.aula)) || c.lugar;
+                  return (
+                    <Pressable
+                      key={`${c.materia}-${c.desde}-${i}`}
+                      style={({ pressed }) => [s.mdItem, enCurso && s.mdItemAhora, pressed && { transform: [{ scale: 0.99 }] }]}
+                      onPress={() => {
+                        if (!c.virtual) router.navigate('/mapa');
+                      }}
+                    >
+                      <View style={s.mdIc}>
+                        <Image source={IC.clase} style={s.mdIcImg} resizeMode="contain" />
+                      </View>
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <Text style={s.mdN}>{c.materia}</Text>
+                        <View style={s.mdM}>
+                          <View style={s.mdMItem}>
+                            <Mini src={c.virtual ? IC.video : IC.pin} />
+                            <Text style={s.mdMTxt}>{c.virtual ? 'Virtual' : lugar}</Text>
+                          </View>
+                          <View style={s.mdMItem}>
+                            <Mini src={IC.reloj} />
+                            <Text style={s.mdMTxt}>{`${sin0(c.desde)} – ${sin0(c.hasta)}`}</Text>
+                          </View>
+                          {!!c.profesor && (
+                            <View style={s.mdMItem}>
+                              <Mini src={IC.persona} />
+                              <Text style={s.mdMTxt}>{`Prof. ${c.profesor}`}</Text>
+                            </View>
+                          )}
+                        </View>
+                        <View style={s.mdTags}>
+                          {enCurso && <Text style={[s.mdTag, s.mdTagAhora]}>En curso</Text>}
+                          <Text style={s.mdTag}>{c.virtual ? 'Virtual' : 'Presencial'}</Text>
+                        </View>
+                      </View>
+                    </Pressable>
+                  );
+                })
+              )}
             </View>
-            <View style={s.mdMItem}>
-              <Mini src={IC.reloj} />
-              <Text style={s.mdMTxt}>{`${sin0(c.desde)} – ${sin0(c.hasta)}`}</Text>
-            </View>
-            {!!c.profesor && (
-              <View style={s.mdMItem}>
-                <Mini src={IC.persona} />
-                <Text style={s.mdMTxt}>{`Prof. ${c.profesor}`}</Text>
+
+            {/* banner */}
+            <View style={[s.hero, ancho && { height: 220 }]}>
+              <Image
+                source={FOTO_CAMPUS}
+                style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]}
+                resizeMode="cover"
+              />
+              <LinearGradient
+                colors={['rgba(26,51,153,0.95)', 'rgba(26,51,153,0.7)', 'rgba(26,51,153,0.15)']}
+                locations={[0, 0.5, 1]}
+                start={{ x: 0, y: 0.5 }}
+                end={{ x: 1, y: 0.5 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View style={s.heroTxt}>
+                <Text style={s.heroB}>Universidad Nacional de Moreno</Text>
+                <Text style={s.heroSpan}>Más cerca, siempre.</Text>
               </View>
+            </View>
+          </View>
+
+          {/* columna derecha: accesos, aulas libres, novedades */}
+          <View style={ancho ? s.colDer : undefined}>
+            <Text style={[s.quickTitle, ancho && { marginTop: 0 }]}>Accesos rápidos</Text>
+            <View style={[s.quick, ancho && { justifyContent: 'flex-start' }]}>
+              <Pressable style={s.qbtn} onPress={() => router.navigate('/agenda')}>
+                <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
+                <Text style={s.qTxt}>Novedades</Text>
+              </Pressable>
+              <Pressable style={s.qbtn} onPress={() => setVerProfes(true)}>
+                <Image source={IC.profesores} style={s.qIc} resizeMode="contain" />
+                <Text style={s.qTxt}>Profesores</Text>
+              </Pressable>
+            </View>
+
+            <View style={s.bloque}>
+              <View style={{ flex: 1 }}>
+                <Text style={s.bloqueLabel}>AULAS LIBRES AHORA</Text>
+                <Text style={s.bloqueSub}>{`${libres} de ${total} aulas sin clase`}</Text>
+              </View>
+              <Text style={s.libresNum}>{libres}</Text>
+            </View>
+
+            <Text style={s.quickTitle}>Novedades</Text>
+            {novedades.length === 0 ? (
+              <View style={s.bloque}>
+                <Text style={s.bloqueSub}>No hay novedades por ahora.</Text>
+              </View>
+            ) : (
+              novedades.map((n) => (
+                <View key={n.id} style={s.bloque}>
+                  <Image source={IC.aviso} style={s.avisoIc} resizeMode="contain" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={s.avisoTitulo}>{n.titulo}</Text>
+                    {!!n.texto && <Text style={s.bloqueSub}>{n.texto}</Text>}
+                  </View>
+                </View>
+              ))
             )}
           </View>
-          <View style={s.mdTags}>
-            {enCurso && <Text style={[s.mdTag, s.mdTagAhora]}>En curso</Text>}
-            <Text style={s.mdTag}>{c.virtual ? 'Virtual' : 'Presencial'}</Text>
-          </View>
         </View>
-      </Pressable>
-    );
-  })
-)}
+
+        {/* solo se ve mientras desarrollan (expo start), no en la app final */}
+        {__DEV__ && fuente === 'ejemplo' && (
+          <Text style={s.dev}>Mostrando datos de ejemplo: el servidor no respondió o la base está vacía.</Text>
+        )}
       </View>
 
-      {/* banner */}
-      <View style={s.hero}>
-        <Image source={FOTO_CAMPUS} style={StyleSheet.absoluteFill} resizeMode="cover" />
-        <LinearGradient
-          colors={['rgba(26,51,153,0.95)', 'rgba(26,51,153,0.7)', 'rgba(26,51,153,0.15)']}
-          locations={[0, 0.5, 1]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <View style={s.heroTxt}>
-          <Text style={s.heroB}>Universidad Nacional de Moreno</Text>
-          <Text style={s.heroSpan}>Más cerca, siempre.</Text>
-        </View>
-      </View>
-
-      {/* accesos rápidos */}
-      <Text style={s.quickTitle}>Accesos rápidos</Text>
-      <View style={s.quick}>
-        <Pressable style={s.qbtn} onPress={() => router.navigate('/agenda')}>
-          <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
-          <Text style={s.qTxt}>Novedades</Text>
-        </Pressable>
-        <Pressable style={s.qbtn} onPress={() => setVerProfes(true)}>
-          <Image source={IC.profesores} style={s.qIc} resizeMode="contain" />
-          <Text style={s.qTxt}>Profesores</Text>
-        </Pressable>
-      </View>
-
-      {/* lo que ya tenías: aulas libres y novedades, con el mismo estilo */}
-      <View style={s.bloque}>
-        <View style={{ flex: 1 }}>
-          <Text style={s.bloqueLabel}>AULAS LIBRES AHORA</Text>
-          <Text style={s.bloqueSub}>{`${libres} de ${total} aulas sin clase`}</Text>
-        </View>
-        <Text style={s.libresNum}>{libres}</Text>
-      </View>
-
-      <Text style={s.quickTitle}>Novedades</Text>
-      {novedades.length === 0 ? (
-        <View style={s.bloque}>
-          <Text style={s.bloqueSub}>No hay novedades por ahora.</Text>
-        </View>
-      ) : (
-       novedades.map((n) => (
-  <View key={n.id} style={s.bloque}>
-    <Image source={IC.aviso} style={s.avisoIc} resizeMode="contain" />
-    <View style={{ flex: 1 }}>
-      <Text style={s.avisoTitulo}>{n.titulo}</Text>
-      {!!n.texto && <Text style={s.bloqueSub}>{n.texto}</Text>}
-    </View>
-  </View>
-))
-      )}
-
-      {/* solo se ve mientras desarrollan (expo start), no en la app final */}
-      {__DEV__ && fuente === 'ejemplo' && (
-        <Text style={s.dev}>Mostrando datos de ejemplo: el servidor no respondió o la base está vacía.</Text>
-      )}
       <Modal visible={verProfes} animationType="slide" statusBarTranslucent onRequestClose={() => setVerProfes(false)}>
-  <ProfesoresScreen alCerrar={() => setVerProfes(false)} />
-</Modal>
+        <ProfesoresScreen alCerrar={() => setVerProfes(false)} />
+      </Modal>
     </ScrollView>
   );
 }
@@ -248,6 +265,12 @@ const miDia = useMemo(
 const makeStyles = (W: Wf) =>
   StyleSheet.create({
     screen: { flex: 1 },
+
+    // contenedor centrado: en web no se estira a todo el ancho
+    pagina: { width: '100%', maxWidth: 1100, alignSelf: 'center' },
+    cols: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+    colIzq: { flex: 3, minWidth: 0 },
+    colDer: { flex: 2, minWidth: 0 },
 
     homeHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingTop: 16, paddingHorizontal: 18, paddingBottom: 14 },
     h1: { fontFamily: F.h1, fontSize: 22, letterSpacing: 0.3, color: W.ink },

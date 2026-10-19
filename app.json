@@ -24,6 +24,12 @@
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "UNM Connect usa tu ubicación para mostrarte dónde estás en el campus."
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
