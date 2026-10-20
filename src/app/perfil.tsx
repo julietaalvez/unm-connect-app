@@ -1,8 +1,9 @@
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import HeaderMapa from '../components/HeaderMapa';
+import PlanillaMaterias from '../components/PlanillaMaterias';
 import { FUENTE } from '../data/profes';
 import { materiaDeMisCarreras, useCarreras, useMateriaCarreras, useMisCarreras } from '../lib/carreras';
 import type { Cursada } from '../lib/inscripciones';
@@ -65,17 +66,18 @@ export default function PerfilScreen() {
   const [abAjustes, setAbAjustes] = useState(false);
   const [agregando, setAgregando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
+  const [verPlanilla, setVerPlanilla] = useState(false);
 
   const u = usuarioActual();
   const nombre = u?.nombre ?? 'Invitado';
- const catalogo = useCatalogo();
- const { claves, inscribir, quitar } = useInscripciones();
-   const { carreras } = useCarreras();
+  const catalogo = useCatalogo();
+  const { claves, inscribir, quitar } = useInscripciones();
+  const { carreras } = useCarreras();
   const { ids: misCarreras, guardar: guardarCarreras } = useMisCarreras();
   const materiaCarreras = useMateriaCarreras();
- const todas = useMemo(() => armarCursadas(catalogo), [catalogo]);
- const misCursadas = useMemo(() => todas.filter((c) => claves.has(c.clave)), [todas, claves]);
-   const resultados = useMemo(() => {
+  const todas = useMemo(() => armarCursadas(catalogo), [catalogo]);
+  const misCursadas = useMemo(() => todas.filter((c) => claves.has(c.clave)), [todas, claves]);
+  const resultados = useMemo(() => {
     const q = norm(busqueda.trim());
     return todas
       .filter((c) =>
@@ -138,9 +140,9 @@ export default function PerfilScreen() {
         <Fila icono={ICONOS.perfil} texto="Mi perfil" onPress={() => proximamente('Mi perfil')} />
 
         <Fila icono={ICONOS.materias} texto="Mis materias" abierto={abMaterias} onPress={() => setAbMaterias((v) => !v)} />
-       {abMaterias && (
-  <View style={s.sub}>
-                <View style={s.matCard}>
+        {abMaterias && (
+          <View style={s.sub}>
+            <View style={s.matCard}>
               <Text style={s.matB}>Mis carreras</Text>
               <Text style={s.matC}>Al buscar materias solo vas a ver las de las carreras que elijas.</Text>
               <View style={s.chips}>
@@ -150,67 +152,72 @@ export default function PerfilScreen() {
                     <Pressable
                       key={c.id}
                       style={[s.chip, on && { backgroundColor: W.navy }]}
-                      onPress={() => guardarCarreras(on ? misCarreras.filter((x) => x !== c.id) : [...misCarreras, c.id])}>
+                      onPress={() => guardarCarreras(on ? misCarreras.filter((x) => x !== c.id) : [...misCarreras, c.id])}
+                    >
                       <Text style={[s.chipTxt, on && { color: '#ffffff' }]}>{c.nombre}</Text>
                     </Pressable>
                   );
                 })}
               </View>
             </View>
-    {misCursadas.length === 0 ? (
-      <View style={s.matCard}>
-        <Text style={s.matC}>Todavía no agregaste materias. Tocá "Agregar materias" para elegir las que cursás.</Text>
-      </View>
-    ) : (
-      misCursadas.map((c) => (
-        <View key={c.clave} style={s.matCard}>
-          <Text style={s.matB}>{c.materia}</Text>
-          <Text style={s.matC}>{`Comisión ${c.comision}${c.profes.length ? ` · Prof. ${c.profes.join(', ')}` : ''}`}</Text>
-          {c.franjas.map((f, i) => (
-            <Text key={i} style={s.matH}>{lineaFranja(f)}</Text>
-          ))}
-          <Pressable style={s.miniBtn} onPress={() => quitar(c.clave)}>
-            <Text style={s.miniBtnTxt}>Quitar</Text>
-          </Pressable>
-        </View>
-      ))
-    )}
 
-    <Pressable style={s.btnAgregar} onPress={() => setAgregando((v) => !v)}>
-      <Image source={ICONOS.mas} style={{ width: 16, height: 16, tintColor: oscuro ? '#04101f' : '#ffffff' }} resizeMode="contain" />
-      <Text style={s.btnAgregarTxt}>{agregando ? 'Cerrar búsqueda' : 'Agregar materias'}</Text>
-    </Pressable>
-
-    {agregando && (
-      <>
-        <TextInput
-          value={busqueda}
-          onChangeText={setBusqueda}
-          placeholder="Buscar materia, comisión o docente"
-          placeholderTextColor={W.meta}
-          style={s.buscador}
-        />
-        {resultados.length === 0 ? (
-          <View style={s.matCard}>
-            <Text style={s.matC}>No hay materias que coincidan.</Text>
-          </View>
-        ) : (
-          resultados.map((c) => (
-            <View key={c.clave} style={s.resFila}>
-              <View style={{ flex: 1 }}>
-                <Text style={s.matB}>{c.materia}</Text>
-                <Text style={s.matC}>{`Comisión ${c.comision}${c.profes.length ? ` · ${c.profes.join(', ')}` : ''}`}</Text>
+            {misCursadas.length === 0 ? (
+              <View style={s.matCard}>
+                <Text style={s.matC}>Todavía no agregaste materias. Tocá "Agregar materias" para elegir las que cursás.</Text>
               </View>
-              <Pressable style={s.miniBtn} onPress={() => inscribir(c.clave)}>
-                <Text style={s.miniBtnTxt}>Agregar</Text>
-              </Pressable>
-            </View>
-          ))
+            ) : (
+              misCursadas.map((c) => (
+                <View key={c.clave} style={s.matCard}>
+                  <Text style={s.matB}>{c.materia}</Text>
+                  <Text style={s.matC}>{`Comisión ${c.comision}${c.profes.length ? ` · Prof. ${c.profes.join(', ')}` : ''}`}</Text>
+                  {c.franjas.map((f, i) => (
+                    <Text key={i} style={s.matH}>{lineaFranja(f)}</Text>
+                  ))}
+                  <Pressable style={s.miniBtn} onPress={() => quitar(c.clave)}>
+                    <Text style={s.miniBtnTxt}>Quitar</Text>
+                  </Pressable>
+                </View>
+              ))
+            )}
+
+            <Pressable style={s.btnAgregar} onPress={() => setAgregando((v) => !v)}>
+              <Image source={ICONOS.mas} style={{ width: 16, height: 16, tintColor: oscuro ? '#04101f' : '#ffffff' }} resizeMode="contain" />
+              <Text style={s.btnAgregarTxt}>{agregando ? 'Cerrar búsqueda' : 'Agregar materias'}</Text>
+            </Pressable>
+
+            {agregando && (
+              <>
+                <TextInput
+                  value={busqueda}
+                  onChangeText={setBusqueda}
+                  placeholder="Buscar materia, comisión o docente"
+                  placeholderTextColor={W.meta}
+                  style={s.buscador}
+                />
+                {resultados.length === 0 ? (
+                  <View style={s.matCard}>
+                    <Text style={s.matC}>No hay materias que coincidan.</Text>
+                  </View>
+                ) : (
+                  resultados.map((c) => (
+                    <View key={c.clave} style={s.resFila}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.matB}>{c.materia}</Text>
+                        <Text style={s.matC}>{`Comisión ${c.comision}${c.profes.length ? ` · ${c.profes.join(', ')}` : ''}`}</Text>
+                      </View>
+                      <Pressable style={s.miniBtn} onPress={() => inscribir(c.clave)}>
+                        <Text style={s.miniBtnTxt}>Agregar</Text>
+                      </Pressable>
+                    </View>
+                  ))
+                )}
+              </>
+            )}
+          </View>
         )}
-      </>
-    )}
-  </View>
-)}
+
+        <Fila icono={ICONOS.materias} texto="Planilla de mi carrera" onPress={() => setVerPlanilla(true)} />
+
         <Fila icono={ICONOS.notificaciones} texto="Notificaciones" onPress={() => proximamente('Notificaciones')} />
 
         <Fila icono={ICONOS.ajustes} texto="Configuración" abierto={abAjustes} onPress={() => setAbAjustes((v) => !v)} />
@@ -229,6 +236,10 @@ export default function PerfilScreen() {
       </View>
 
       <Text style={s.version}>{`UNM Connect · ${FUENTE}`}</Text>
+
+      <Modal visible={verPlanilla} animationType="slide" statusBarTranslucent onRequestClose={() => setVerPlanilla(false)}>
+        <PlanillaMaterias alCerrar={() => setVerPlanilla(false)} />
+      </Modal>
     </ScrollView>
   );
 }
@@ -263,13 +274,14 @@ const makeStyles = (W: Wf, oscuro: boolean) =>
     switchTrack: { width: 44, height: 24, borderRadius: 12, backgroundColor: W.tile, justifyContent: 'center' },
     switchThumb: { position: 'absolute', top: 3, left: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: '#ffffff', elevation: 2 },
 
-    matCard: { backgroundColor: W.soft, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+    matCard: { backgroundColor: W.soft, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
     chip: { backgroundColor: W.card, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
     chipTxt: { fontFamily: F.bodyMed, fontSize: 12, color: W.ink },
     matB: { fontFamily: F.semi, fontSize: 12.5, color: W.ink },
     matC: { fontFamily: F.body, fontSize: 11, color: W.meta, marginTop: 2, marginBottom: 4 },
     matH: { fontFamily: F.body, fontSize: 12, lineHeight: 18, color: W.ink },
-        miniBtn: { alignSelf: 'flex-start', marginTop: 8, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 12, backgroundColor: W.tile },
+    miniBtn: { alignSelf: 'flex-start', marginTop: 8, borderRadius: 999, paddingVertical: 5, paddingHorizontal: 12, backgroundColor: W.tile },
     miniBtnTxt: { fontFamily: F.bodyMed, fontSize: 11.5, color: W.ink },
     btnAgregar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: W.navy, borderRadius: 10, paddingVertical: 11 },
     btnAgregarTxt: { fontFamily: F.semi, fontSize: 13, color: oscuro ? '#04101f' : '#ffffff' },
