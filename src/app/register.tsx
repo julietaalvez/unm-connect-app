@@ -1,11 +1,13 @@
 import { useAppTheme } from '@/context/theme-context';
+import { useCarreras } from '@/lib/carreras';
 import { useState } from 'react';
 import {
-    Pressable,
-    StyleSheet,
-    Text,
-    TextInput,
-    View,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
 } from 'react-native';
 
 const API_URL = 'https://unm-backend-production.up.railway.app';
@@ -26,6 +28,10 @@ export default function RegisterScreen({
   const [confirmar, setConfirmar] = useState('');
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
+    const [elegidas, setElegidas] = useState<number[]>([]);
+  const { carreras, error: errCarreras, recargar } = useCarreras();
+  const alternarCarrera = (id: number) =>
+    setElegidas((a) => (a.includes(id) ? a.filter((x) => x !== id) : [...a, id]));
 
   const colors = {
     background: isDark ? '#0b1424' : '#ffffff',
@@ -46,13 +52,17 @@ export default function RegisterScreen({
       setError('Las contraseñas no coinciden.');
       return;
     }
+        if (elegidas.length === 0) {
+      setError('Elegí al menos una carrera.');
+      return;
+    }
     setError('');
     setCargando(true);
     try {
       const res = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, email, contrasena }),
+        body: JSON.stringify({ nombre, email, contrasena, carreras: elegidas }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -70,7 +80,11 @@ export default function RegisterScreen({
   };
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <ScrollView
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={styles.container}
+      keyboardShouldPersistTaps="handled">
+
       <Text style={[styles.title, { color: colors.text }]}>Crear cuenta</Text>
 
       <TextInput
@@ -105,8 +119,35 @@ export default function RegisterScreen({
         value={confirmar}
         onChangeText={setConfirmar}
       />
+      <Text style={[styles.label, { color: colors.text }]}>
+        ¿Qué carrera cursás? (podés elegir más de una)
+      </Text>
+      <View style={styles.chips}>
+        {carreras.map((c) => {
+          const on = elegidas.includes(c.id);
+          return (
+            <Pressable
+              key={c.id}
+              onPress={() => alternarCarrera(c.id)}
+              style={[styles.chip, { backgroundColor: on ? colors.navy : colors.card }]}>
+              <Text style={[styles.chipTxt, { color: on ? colors.onNavy : colors.text }]}>
+                {on ? '✓ ' : ''}
+                {c.nombre}
+              </Text>
+            </Pressable>
+          );
+        })}
+        {carreras.length === 0 && (
+          <Pressable onPress={recargar}>
+            <Text style={{ color: colors.placeholder, fontSize: 13 }}>
+              {errCarreras ? 'No se pudieron cargar las carreras. Tocá para reintentar.' : 'Cargando carreras…'}
+            </Text>
+          </Pressable>
+        )}
+      </View>
 
       {!!error && <Text style={styles.error}>{error}</Text>}
+     
 
       <Pressable
         style={[styles.button, { backgroundColor: colors.navy }]}
@@ -122,16 +163,25 @@ export default function RegisterScreen({
           Ya tengo cuenta, iniciar sesión
         </Text>
       </Pressable>
-    </View>
+         <Pressable onPress={onGoToLogin}>
+        <Text style={[styles.link, { color: colors.text }]}>
+          Ya tengo cuenta, iniciar sesión
+        </Text>
+      </Pressable>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', paddingHorizontal: 26 },
+   container: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 26, paddingVertical: 40 },
   title: { fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 30 },
   input: { borderRadius: 10, fontSize: 16, padding: 14, marginBottom: 16 },
   error: { color: '#c0392b', fontSize: 12.5, minHeight: 16, marginTop: -6, marginBottom: 8, marginHorizontal: 2 },
   button: { borderRadius: 999, padding: 12, alignItems: 'center' },
   buttonText: { fontWeight: '600', fontSize: 15 },
   link: { textAlign: 'center', marginTop: 18, fontSize: 13.5, fontWeight: '500' },
+    label: { fontSize: 13.5, fontWeight: '600', marginBottom: 8 },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 16 },
+  chip: { borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 },
+  chipTxt: { fontSize: 13.5, fontWeight: '500' },
 });

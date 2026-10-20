@@ -4,6 +4,7 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View 
 
 import HeaderMapa from '../components/HeaderMapa';
 import { FUENTE } from '../data/profes';
+import { materiaDeMisCarreras, useCarreras, useMateriaCarreras, useMisCarreras } from '../lib/carreras';
 import type { Cursada } from '../lib/inscripciones';
 import { armarCursadas, useCatalogo, useInscripciones } from '../lib/inscripciones';
 import { DIAS_CORTO } from '../lib/profes';
@@ -69,14 +70,21 @@ export default function PerfilScreen() {
   const nombre = u?.nombre ?? 'Invitado';
  const catalogo = useCatalogo();
  const { claves, inscribir, quitar } = useInscripciones();
+   const { carreras } = useCarreras();
+  const { ids: misCarreras, guardar: guardarCarreras } = useMisCarreras();
+  const materiaCarreras = useMateriaCarreras();
  const todas = useMemo(() => armarCursadas(catalogo), [catalogo]);
  const misCursadas = useMemo(() => todas.filter((c) => claves.has(c.clave)), [todas, claves]);
- const resultados = useMemo(() => {
-  const q = norm(busqueda.trim());
-  return todas
-    .filter((c) => !claves.has(c.clave) && (!q || norm(c.materia).includes(q) || norm(c.comision).includes(q) || c.profes.some((p) => norm(p).includes(q))))
-    .slice(0, 25);
-}, [todas, claves, busqueda]);
+   const resultados = useMemo(() => {
+    const q = norm(busqueda.trim());
+    return todas
+      .filter((c) =>
+        !claves.has(c.clave) &&
+        materiaDeMisCarreras(c.materia, materiaCarreras, misCarreras) &&
+        (!q || norm(c.materia).includes(q) || norm(c.comision).includes(q) || c.profes.some((p) => norm(p).includes(q)))
+      )
+      .slice(0, 25);
+  }, [todas, claves, busqueda, materiaCarreras, misCarreras]);
 
   const proximamente = (que: string) => Alert.alert(que, 'Esta sección todavía no está disponible.');
   const salir = () =>
@@ -132,6 +140,23 @@ export default function PerfilScreen() {
         <Fila icono={ICONOS.materias} texto="Mis materias" abierto={abMaterias} onPress={() => setAbMaterias((v) => !v)} />
        {abMaterias && (
   <View style={s.sub}>
+                <View style={s.matCard}>
+              <Text style={s.matB}>Mis carreras</Text>
+              <Text style={s.matC}>Al buscar materias solo vas a ver las de las carreras que elijas.</Text>
+              <View style={s.chips}>
+                {carreras.map((c) => {
+                  const on = misCarreras.includes(c.id);
+                  return (
+                    <Pressable
+                      key={c.id}
+                      style={[s.chip, on && { backgroundColor: W.navy }]}
+                      onPress={() => guardarCarreras(on ? misCarreras.filter((x) => x !== c.id) : [...misCarreras, c.id])}>
+                      <Text style={[s.chipTxt, on && { color: '#ffffff' }]}>{c.nombre}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </View>
     {misCursadas.length === 0 ? (
       <View style={s.matCard}>
         <Text style={s.matC}>Todavía no agregaste materias. Tocá "Agregar materias" para elegir las que cursás.</Text>
@@ -238,7 +263,9 @@ const makeStyles = (W: Wf, oscuro: boolean) =>
     switchTrack: { width: 44, height: 24, borderRadius: 12, backgroundColor: W.tile, justifyContent: 'center' },
     switchThumb: { position: 'absolute', top: 3, left: 3, width: 18, height: 18, borderRadius: 9, backgroundColor: '#ffffff', elevation: 2 },
 
-    matCard: { backgroundColor: W.soft, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },
+    matCard: { backgroundColor: W.soft, borderRadius: 10, paddingVertical: 10, paddingHorizontal: 12 },    chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+    chip: { backgroundColor: W.card, borderRadius: 999, paddingVertical: 7, paddingHorizontal: 12 },
+    chipTxt: { fontFamily: F.bodyMed, fontSize: 12, color: W.ink },
     matB: { fontFamily: F.semi, fontSize: 12.5, color: W.ink },
     matC: { fontFamily: F.body, fontSize: 11, color: W.meta, marginTop: 2, marginBottom: 4 },
     matH: { fontFamily: F.body, fontSize: 12, lineHeight: 18, color: W.ink },
