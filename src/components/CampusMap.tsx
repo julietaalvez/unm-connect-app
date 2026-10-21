@@ -4,6 +4,7 @@ import Svg, { Circle, Ellipse, Path, Polygon, Text as SvgText } from 'react-nati
 
 import { BUILDINGS, Building, FIELD, GATES, PATH_D, PATH_POLYGONS } from '../data/campus';
 import { EDIFICIOS_CON_INTERIOR } from '../data/edificios';
+import { fotoDeEdificio } from '../data/fotosEdificios';
 import { GATE_LABELS, PuertaCampus, rutaCampus } from '../lib/campusRuta';
 import { Paso, rutaToPath } from '../lib/interior';
 import { Colores, useTema } from '../lib/tema';
@@ -131,6 +132,7 @@ export default function CampusMap({ onEnterBuilding }: Props) {
   );
 
   const interior = selected ? idInterior(selected.id) : undefined;
+  const foto = selected ? fotoDeEdificio(selected.id, selected.label) : undefined;
 
   function limpiarRuta() {
     setRuta(null);
@@ -349,6 +351,7 @@ export default function CampusMap({ onEnterBuilding }: Props) {
       <View style={s.info}>
         {selected ? (
           <>
+            {foto && <Image source={foto} style={[s.heroFoto, { marginBottom: 8 }]} resizeMode="cover" />}
             <View style={s.infoHead}>
               <View style={{ flex: 1 }}>
                 <Text style={s.infoTitle}>{selected.label}</Text>

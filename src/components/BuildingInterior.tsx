@@ -13,6 +13,8 @@ import {
 } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
 import { AMENITIES, Comodidades, EDIFICIOS, NOTES, Piso, SCHEDULE } from '../data/edificios';
+import { fotoDeEdificio } from '../data/fotosEdificios';
+import { TAM_ICONO, TipoIcono, centroVisual, tipoIcono } from '../data/iconos';
 import { cargarAulas } from '../lib/api';
 import {
   Ruta,
@@ -29,8 +31,7 @@ import {
 } from '../lib/interior';
 import { Colores, useTema } from '../lib/tema';
 import HeaderMapa from './HeaderMapa';
-
-const FOTO = require('../../assets/images/daract2.png');
+import IconoEspacio from './IconoEspacio';
 
 const fillDe = (C: Colores) => ({
   aula: { fill: C.aulaFill, stroke: C.aulaStroke, selFill: C.aulaSel, selStroke: C.aulaSelStroke },
@@ -79,6 +80,9 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
   const { width: winW } = useWindowDimensions();
   const pisos = Object.keys(ed.floors);
 
+  // foto del edificio (la misma que se ve en el mapa del campus)
+  const foto = fotoDeEdificio(buildingId, ed.name) ?? fotoDeEdificio(buildingId.replace('edificio-', ''), ed.name);
+
   const [floor, setFloor] = useState(pisos[0]);
   const [mi, setMi] = useState<Ubicacion>(() => puntoInicial(ed));
   const [selId, setSelId] = useState<string | null>(null);
@@ -98,7 +102,21 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
   const [vx, vy, vw, vh] = viewBox.split(' ').map(Number);
   const svgW = mapW * zoom;
   const svgH = (svgW * vh) / vw;
-  const fs = LABEL_PX / (svgW / vw); // tamaño de letra en unidades del plano
+  const k = svgW / vw; // píxeles por unidad del plano
+  const fs = LABEL_PX / k; // tamaño de letra en unidades del plano
+
+  // íconos de baños, escaleras y ascensor: posición y tamaño de cada uno (se recalcula solo al cambiar de piso)
+  const iconos = useMemo(
+    () =>
+      piso.shapes.flatMap((sh) => {
+        const tipo = tipoIcono(sh.id);
+        if (!tipo) return [];
+        const c = centroVisual(sh, buildingId);
+        const size = Math.min(TAM_ICONO[tipo], c.r * 2.4); // nunca más grande que el espacio
+        return [{ id: sh.id, tipo: tipo as TipoIcono, x: c.x, y: c.y, size }];
+      }),
+    [piso, buildingId],
+  );
 
   // al cambiar de piso, centrar el plano
   useEffect(() => {
@@ -244,79 +262,82 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
           onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => (scrollX.current = e.nativeEvent.contentOffset.x)}
           style={{ borderRadius: 14 }}
         >
-          <Svg width={svgW} height={svgH} viewBox={viewBox}>
-            {/* espacios */}
-            <G>
-              {piso.shapes.map((sh) => {
-                const tipo = classify(sh.id);
-                const st = FILL[tipo];
-                const sel = sh.id === selId;
-                return (
-                  <Path
-                    key={sh.id}
-                    d={sh.d}
-                    fill={sel ? st.selFill : st.fill}
-                    stroke={sel ? st.selStroke : st.stroke}
-                    strokeWidth={tipo === 'muted' ? 0.6 : 1.2}
-                    pointerEvents={tipo === 'muted' ? 'none' : 'auto'}
-                    onPress={tipo === 'muted' ? undefined : () => elegirEspacio(sh.id)}
-                  />
-                );
-              })}
-            </G>
-
-            {/* íconos de baños / escaleras */}
-            <G pointerEvents="none">
-              {piso.icons.map((ic) =>
-                ic.ds.map((d, i) => <Path key={ic.forId + i} d={d} fill={C.icon} />),
-              )}
-            </G>
-
-            {/* ruta */}
-            {ruta && (
-              <Path
-                d={rutaToPath(ruta.points)}
-                fill="none"
-                stroke={C.route}
-                strokeWidth={2.5}
-                strokeDasharray="6 5"
-                strokeLinecap="round"
-                pointerEvents="none"
-              />
-            )}
-
-            {/* "estás acá" */}
-            {puntoEnEstePiso && (
-              <G pointerEvents="none">
-                <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={9} fill="#4f8ef7" />
-                <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={15} fill="none" stroke="#4f8ef7" strokeWidth={2} opacity={0.5} />
+          <View style={{ width: svgW, height: svgH }}>
+            <Svg width={svgW} height={svgH} viewBox={viewBox}>
+              {/* espacios */}
+              <G>
+                {piso.shapes.map((sh) => {
+                  const tipo = classify(sh.id);
+                  const st = FILL[tipo];
+                  const sel = sh.id === selId;
+                  return (
+                    <Path
+                      key={sh.id}
+                      d={sh.d}
+                      fill={sel ? st.selFill : st.fill}
+                      stroke={sel ? st.selStroke : st.stroke}
+                      strokeWidth={tipo === 'muted' ? 0.6 : 1.2}
+                      pointerEvents={tipo === 'muted' ? 'none' : 'auto'}
+                      onPress={tipo === 'muted' ? undefined : () => elegirEspacio(sh.id)}
+                    />
+                  );
+                })}
               </G>
-            )}
 
-            {/* carteles (con halo blanco para que se lean sobre cualquier color) */}
-            <G pointerEvents="none">
-              {piso.shapes.map((sh) => {
-                if (!mostrarCartel(sh.id)) return null;
-                const tipo = classify(sh.id);
-                const label = labelFor(sh.id)!;
-                const conClase = !!SCHEDULE[sh.id];
-                const y = (conClase ? sh.cy - fs * 0.35 : sh.cy) + fs * 0.35; // +0.35 = centrado vertical
-                return (
-                  <G key={'t' + sh.id}>
-                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill="none" stroke={C.halo} strokeWidth={fs * 0.2} strokeLinejoin="round">
-                      {label}
-                    </SvgText>
-                    <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill={C.label}>
-                      {label}
-                    </SvgText>
-                    {(conClase || tipo === 'aula') && (
-                      <Circle cx={sh.cx} cy={y - fs * 0.35 + fs * 0.95} r={Math.max(3, fs * 0.2)} fill={conClase ? '#f5a35c' : '#4fd18a'} />
-                    )}
-                  </G>
-                );
-              })}
-            </G>
-          </Svg>
+              {/* ruta */}
+              {ruta && (
+                <Path
+                  d={rutaToPath(ruta.points)}
+                  fill="none"
+                  stroke={C.route}
+                  strokeWidth={2.5}
+                  strokeDasharray="6 5"
+                  strokeLinecap="round"
+                  pointerEvents="none"
+                />
+              )}
+
+              {/* "estás acá" */}
+              {puntoEnEstePiso && (
+                <G pointerEvents="none">
+                  <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={9} fill="#4f8ef7" />
+                  <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={15} fill="none" stroke="#4f8ef7" strokeWidth={2} opacity={0.5} />
+                </G>
+              )}
+
+              {/* carteles (con halo blanco para que se lean sobre cualquier color) */}
+              <G pointerEvents="none">
+                {piso.shapes.map((sh) => {
+                  if (!mostrarCartel(sh.id)) return null;
+                  if (tipoIcono(sh.id)) return null; // baños, escaleras y ascensor se muestran con su ícono
+                  const tipo = classify(sh.id);
+                  const label = labelFor(sh.id)!;
+                  const conClase = !!SCHEDULE[sh.id];
+                  const y = (conClase ? sh.cy - fs * 0.35 : sh.cy) + fs * 0.35; // +0.35 = centrado vertical
+                  return (
+                    <G key={'t' + sh.id}>
+                      <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill="none" stroke={C.halo} strokeWidth={fs * 0.2} strokeLinejoin="round">
+                        {label}
+                      </SvgText>
+                      <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill={C.label}>
+                        {label}
+                      </SvgText>
+                      {(conClase || tipo === 'aula') && (
+                        <Circle cx={sh.cx} cy={y - fs * 0.35 + fs * 0.95} r={Math.max(3, fs * 0.2)} fill={conClase ? '#f5a35c' : '#4fd18a'} />
+                      )}
+                    </G>
+                  );
+                })}
+              </G>
+            </Svg>
+
+            {/* íconos (PNG) encima del plano; no bloquean los toques */}
+            <View style={StyleSheet.absoluteFill} pointerEvents="none">
+              {iconos.map((ic) => (
+                <IconoEspacio key={ic.id} tipo={ic.tipo} x={ic.x} y={ic.y} size={ic.size} vbX={vx} vbY={vy} k={k} color={C.icon} />
+              ))}
+            </View>
+          </View>
         </ScrollView>
 
         {/* zoom */}
@@ -337,6 +358,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
         ) : (
           <FichaEspacio
             nombreEdificio={ed.name}
+            foto={foto}
             piso={floor}
             id={forma.id}
             ruta={ruta}
@@ -351,12 +373,14 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
 /* ---------- ficha de un espacio ---------- */
 function FichaEspacio({
   nombreEdificio,
+  foto,
   piso,
   id,
   ruta,
   onComoLlegar,
 }: {
   nombreEdificio: string;
+  foto?: any;
   piso: string;
   id: string;
   ruta: Ruta | null;
@@ -367,13 +391,15 @@ function FichaEspacio({
   const label = labelFor(id) || id;
   const clase = SCHEDULE[id];
   const nota = NOTES[id];
-       const [todas, setTodas] = useState<Record<string, Comodidades>>(AMENITIES);
-     useEffect(() => {
-       let vivo = true;
-       cargarAulas().then((r) => vivo && setTodas(r));
-       return () => { vivo = false; };
-     }, []);
-     const am = todas[id];
+  const [todas, setTodas] = useState<Record<string, Comodidades>>(AMENITIES);
+  useEffect(() => {
+    let vivo = true;
+    cargarAulas().then((r) => vivo && setTodas(r));
+    return () => {
+      vivo = false;
+    };
+  }, []);
+  const am = todas[id];
 
   return (
     <View>
@@ -392,7 +418,7 @@ function FichaEspacio({
             </View>
           )}
         </View>
-        <Image source={FOTO} style={s.photo} resizeMode="cover" />
+        {foto && <Image source={foto} style={s.photo} resizeMode="cover" />}
       </View>
 
       {clase && (
