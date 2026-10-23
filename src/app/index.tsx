@@ -1,22 +1,16 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
+import { Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import HeaderMapa from '../components/HeaderMapa';
+import NotificacionesScreen from '../components/NotificacionesScreen';
 import ProfesoresScreen from '../components/ProfesoresScreen';
-import {
-  ClaseHoy,
-  Fuente,
-  NOVEDADES_EJEMPLO,
-  Novedad,
-  cargarClasesHoy,
-  cargarNovedades,
-  clasesEjemplo,
-} from '../lib/api';
+import { ClaseHoy, Fuente, cargarClasesHoy, clasesEjemplo } from '../lib/api';
 import { aMinutos, contarAulasLibres, minutosDe } from '../lib/inicio';
 import { armarCursadas, clasesDelDia, useCatalogo, useInscripciones } from '../lib/inscripciones';
 import { labelFor } from '../lib/interior';
+import { useNovedades } from '../lib/novedades';
 import { usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
 import { Wf, useWf } from '../lib/wf';
@@ -33,8 +27,9 @@ const IC = {
   video: require('../../assets/icons/video.png'),
   persona: require('../../assets/icons/profesores.png'),
   aviso: require('../../assets/icons/campana.png'),
+    calendario: require('../../assets/icons/materias.png'),
 };
-
+const ICONO_TIPO = { aula: IC.pin, evento: IC.calendario, aviso: IC.campana };
 const primerNombre = () => (usuarioActual()?.nombre ?? 'estudiante').split(' ')[0];
 
 // Fuentes (se cargan en _layout.tsx). Si no están, usa la del sistema.
@@ -65,27 +60,29 @@ export default function InicioScreen() {
 
   // Arranca con datos de ejemplo para que la pantalla nunca quede vacía
   const [clases, setClases] = useState<ClaseHoy[]>(() => clasesEjemplo());
-  const [novedades, setNovedades] = useState<Novedad[]>(NOVEDADES_EJEMPLO);
+   const [verNotifs, setVerNotifs] = useState(false);
+  const { lista: novedades, sinLeer, recargar: recargarNovedades } = useNovedades();
   const [fuente, setFuente] = useState<Fuente>('ejemplo');
   const [, setCargando] = useState(true);
   const [verProfes, setVerProfes] = useState(false);
   const [, setTic] = useState(0);
 
-  const cargar = useCallback(async () => {
-    const [c, n] = await Promise.all([cargarClasesHoy(), cargarNovedades()]);
+   const cargar = useCallback(async () => {
+    const c = await cargarClasesHoy();
     setClases(c.datos);
-    setNovedades(n.datos);
-    setFuente(c.fuente === 'servidor' || n.fuente === 'servidor' ? 'servidor' : 'ejemplo');
+    setFuente(c.fuente);
     setCargando(false);
   }, []);
-
   useEffect(() => {
     cargar();
   }, [cargar]);
 
   // actualiza "en curso" y "aulas libres" cada minuto
   useEffect(() => {
-    const id = setInterval(() => setTic((t) => t + 1), 60000);
+        const id = setInterval(() => {
+      setTic((t) => t + 1);
+      recargarNovedades();
+    }, 60000);
     return () => clearInterval(id);
   }, []);
 
@@ -109,7 +106,7 @@ export default function InicioScreen() {
       style={[s.screen, { backgroundColor: C.bg }]}
       contentContainerStyle={{ paddingBottom: 140 }}
       contentInsetAdjustmentBehavior="never"
-      refreshControl={<RefreshControl refreshing={false} onRefresh={cargar} tintColor={C.dim} />}
+      refreshControl={<RefreshControl refreshing={false} onRefresh={() => { cargar(); recargarNovedades(); }} tintColor={C.dim} />}
     >
       <View style={s.pagina}>
         <HeaderMapa />
@@ -117,12 +114,17 @@ export default function InicioScreen() {
         {/* saludo + campana */}
         <View style={s.homeHead}>
           <Text style={s.h1}>{`HOLA ${primerNombre().toUpperCase()}!`}</Text>
-          <Pressable
+                   <Pressable
             style={s.plainBtn}
-            accessibilityLabel="Notificaciones"
-            onPress={() => Alert.alert('Notificaciones', 'No tenés notificaciones nuevas')}
+            accessibilityLabel={sinLeer > 0 ? `Notificaciones, ${sinLeer} sin leer` : 'Notificaciones'}
+            onPress={() => setVerNotifs(true)}
           >
             <Image source={IC.campana} style={s.campana} resizeMode="contain" />
+            {sinLeer > 0 && (
+              <View style={s.badge}>
+                <Text style={s.badgeTxt}>{sinLeer > 9 ? '9+' : sinLeer}</Text>
+              </View>
+            )}
           </Pressable>
         </View>
 
@@ -236,9 +238,9 @@ export default function InicioScreen() {
                 <Text style={s.bloqueSub}>No hay novedades por ahora.</Text>
               </View>
             ) : (
-              novedades.map((n) => (
+                           novedades.slice(0, 5).map((n) => (
                 <View key={n.id} style={s.bloque}>
-                  <Image source={IC.aviso} style={s.avisoIc} resizeMode="contain" />
+                  <Image source={ICONO_TIPO[n.tipo]} style={s.avisoIc} resizeMode="contain" />
                   <View style={{ flex: 1 }}>
                     <Text style={s.avisoTitulo}>{n.titulo}</Text>
                     {!!n.texto && <Text style={s.bloqueSub}>{n.texto}</Text>}
@@ -258,6 +260,9 @@ export default function InicioScreen() {
       <Modal visible={verProfes} animationType="slide" statusBarTranslucent onRequestClose={() => setVerProfes(false)}>
         <ProfesoresScreen alCerrar={() => setVerProfes(false)} />
       </Modal>
+            <Modal visible={verNotifs} animationType="slide" statusBarTranslucent onRequestClose={() => setVerNotifs(false)}>
+        <NotificacionesScreen alCerrar={() => setVerNotifs(false)} />
+      </Modal>
     </ScrollView>
   );
 }
@@ -276,6 +281,8 @@ const makeStyles = (W: Wf) =>
     h1: { fontFamily: F.h1, fontSize: 22, letterSpacing: 0.3, color: W.ink },
     plainBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
     campana: { width: 26, height: 26 },
+        badge: { position: 'absolute', top: -3, right: -5, minWidth: 17, height: 17, borderRadius: 9, backgroundColor: '#e03131', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+    badgeTxt: { fontFamily: F.bodyBold, fontSize: 10, color: '#ffffff' },
 
     mdCard: { marginHorizontal: 16, backgroundColor: W.card, borderRadius: 18, paddingTop: 12, paddingHorizontal: 10, paddingBottom: 10 },
     mdTitulo: { fontFamily: F.h1, fontSize: 20, letterSpacing: 0.3, color: W.h2, marginHorizontal: 6 },

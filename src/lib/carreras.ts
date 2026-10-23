@@ -6,6 +6,8 @@ import { API_URL } from './api';
 import { usuarioActual } from './sesion';
 
 export type Carrera = { id: number; nombre: string };
+// avisa a todas las pantallas cuando cambian mis carreras
+const oyentes = new Set<(ids: number[]) => void>();
 
 async function pedir<T>(ruta: string): Promise<T> {
   const ctl = new AbortController();
@@ -71,6 +73,12 @@ export function useMisCarreras() {
       vivo = false;
     };
   }, [id, clave]);
+    useEffect(() => {
+    oyentes.add(setIds);
+    return () => {
+      oyentes.delete(setIds);
+    };
+  }, []);
 
   const guardar = useCallback(
     async (nuevos: number[]) => {
@@ -86,9 +94,12 @@ export function useMisCarreras() {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         AsyncStorage.setItem(clave, JSON.stringify(nuevos)).catch(() => {});
       } catch {
+                oyentes.forEach((f) => f(nuevos));
         setIds(antes);
         Alert.alert('Carreras', 'No se pudo guardar. Revisá tu conexión.');
+        throw new Error('No se pudieron guardar las carreras.');
       }
+
     },
     [id, ids, clave]
   );

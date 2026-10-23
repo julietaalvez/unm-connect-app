@@ -2,12 +2,14 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import EditarPerfil from '../components/EditarPerfil';
 import HeaderMapa from '../components/HeaderMapa';
 import PlanillaMaterias from '../components/PlanillaMaterias';
 import { FUENTE } from '../data/profes';
 import { materiaDeMisCarreras, useCarreras, useMateriaCarreras, useMisCarreras } from '../lib/carreras';
 import type { Cursada } from '../lib/inscripciones';
 import { armarCursadas, useCatalogo, useInscripciones } from '../lib/inscripciones';
+import { usePush } from '../lib/novedades';
 import { DIAS_CORTO } from '../lib/profes';
 import { cerrarSesion, usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
@@ -67,6 +69,10 @@ export default function PerfilScreen() {
   const [agregando, setAgregando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [verPlanilla, setVerPlanilla] = useState(false);
+    const [editando, setEditando] = useState(false);
+  const [, refrescar] = useState(0);
+    const [abNotif, setAbNotif] = useState(false);
+  const { activo: pushActivo, cambiar: cambiarPush } = usePush();
 
   const u = usuarioActual();
   const nombre = u?.nombre ?? 'Invitado';
@@ -120,7 +126,7 @@ export default function PerfilScreen() {
         <Pressable style={s.plainBtn} accessibilityLabel="Volver al inicio" onPress={() => router.navigate('/')}>
           <Icono src={ICONOS.atras} size={26} />
         </Pressable>
-        <Pressable style={s.plainBtn} accessibilityLabel="Editar perfil" onPress={() => proximamente('Editar perfil')}>
+        <Pressable style={s.plainBtn} accessibilityLabel="Editar perfil" onPress={() => setEditando(true)}>
           <Icono src={ICONOS.editar} size={24} />
         </Pressable>
       </View>
@@ -128,7 +134,11 @@ export default function PerfilScreen() {
       {/* foto + nombre */}
       <View style={s.profile}>
         <View style={s.avatar}>
-          <Text style={s.avatarTxt}>{iniciales(nombre)}</Text>
+          {u?.foto ? (
+            <Image source={{ uri: u.foto }} style={s.avatarImg} />
+          ) : (
+            <Text style={s.avatarTxt}>{iniciales(nombre)}</Text>
+          )}
         </View>
         <Text style={s.nombre}>{nombre}</Text>
         <Text style={s.rol}>{ROL[u?.rol ?? 'estudiante'] ?? u?.rol}</Text>
@@ -137,7 +147,7 @@ export default function PerfilScreen() {
 
       {/* lista */}
       <View style={s.lista}>
-        <Fila icono={ICONOS.perfil} texto="Mi perfil" onPress={() => proximamente('Mi perfil')} />
+        <Fila icono={ICONOS.perfil} texto="Mi perfil" onPress={() => setEditando(true)} />
 
         <Fila icono={ICONOS.materias} texto="Mis materias" abierto={abMaterias} onPress={() => setAbMaterias((v) => !v)} />
         {abMaterias && (
@@ -218,7 +228,18 @@ export default function PerfilScreen() {
 
         <Fila icono={ICONOS.materias} texto="Planilla de mi carrera" onPress={() => setVerPlanilla(true)} />
 
-        <Fila icono={ICONOS.notificaciones} texto="Notificaciones" onPress={() => proximamente('Notificaciones')} />
+                <Fila icono={ICONOS.notificaciones} texto="Notificaciones" abierto={abNotif} onPress={() => setAbNotif((v) => !v)} />
+        {abNotif && (
+          <View style={s.sub}>
+            <Pressable style={s.subFila} onPress={cambiarPush} accessibilityRole="switch" accessibilityState={{ checked: pushActivo }}>
+              <Text style={s.subTxt}>Recibir avisos en el celular</Text>
+              <View style={[s.switchTrack, pushActivo && { backgroundColor: W.navy }]}>
+                <View style={[s.switchThumb, pushActivo && { left: 23 }]} />
+              </View>
+            </Pressable>
+            <Text style={s.matC}>Cambios de aula y eventos importantes. Igual los ves siempre en la campanita de Inicio.</Text>
+          </View>
+        )}
 
         <Fila icono={ICONOS.ajustes} texto="Configuración" abierto={abAjustes} onPress={() => setAbAjustes((v) => !v)} />
         {abAjustes && (
@@ -240,6 +261,9 @@ export default function PerfilScreen() {
       <Modal visible={verPlanilla} animationType="slide" statusBarTranslucent onRequestClose={() => setVerPlanilla(false)}>
         <PlanillaMaterias alCerrar={() => setVerPlanilla(false)} />
       </Modal>
+            <Modal visible={editando} animationType="slide" onRequestClose={() => setEditando(false)}>
+        <EditarPerfil alCerrar={() => setEditando(false)} alGuardar={() => refrescar((n) => n + 1)} />
+      </Modal>
     </ScrollView>
   );
 }
@@ -252,7 +276,7 @@ const makeStyles = (W: Wf, oscuro: boolean) =>
     plainBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
 
     profile: { alignItems: 'center', paddingHorizontal: 18, paddingBottom: 16 },
-    avatar: { width: 108, height: 108, borderRadius: 54, backgroundColor: W.card, alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+    avatar: { width: 108, height: 108, borderRadius: 54, backgroundColor: W.card, alignItems: 'center', justifyContent: 'center', marginBottom: 12, overflow: 'hidden' },     avatarImg: { width: 108, height: 108, borderRadius: 54 },
     avatarTxt: { fontFamily: F.h2, fontSize: 34, color: oscuro ? W.ink : W.navy },
     nombre: { fontFamily: F.h2, fontSize: 19, color: W.ink, textAlign: 'center' },
     rol: { fontFamily: F.body, fontSize: 13, color: W.ink, marginTop: 4, textAlign: 'center' },
