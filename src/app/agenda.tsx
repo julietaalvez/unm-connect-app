@@ -40,6 +40,7 @@ type AgendaEvent = {
   edificio?: string;
   place?: string;
   custom?: boolean;
+  color?: string;
 };
 
 const STORAGE_KEY = 'unm-conect-agenda-eventos';
@@ -47,6 +48,23 @@ const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 
 const SHORT_MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 const BUILDINGS = ['Daract I', 'Daract II', 'Dorrego I', 'Dorrego II', 'Edificio Histórico', 'Laboratorios', 'Comedor', 'Carpa / Pabellón', 'ESPUM', 'Mantenimiento'];
+
+const PALETA_EVENTOS = [
+  { nombre: 'Azul', color: '#3978E5' },
+  { nombre: 'Verde', color: '#27966A' },
+  { nombre: 'Rosa', color: '#E65C91' },
+  { nombre: 'Naranja', color: '#E88A32' },
+  { nombre: 'Violeta', color: '#8B62CC' },
+  { nombre: 'Rojo', color: '#DB4D4D' },
+  { nombre: 'Turquesa', color: '#20A5A5' },
+  { nombre: 'Amarillo', color: '#D9AD27' },
+];
+
+function colorDelEvento(ev: AgendaEvent): string {
+  if (ev.color) return ev.color;
+  if (ev.type === 'aviso') return '#E88A32';
+  return ev.modo === 'virtual' ? '#8B62CC' : '#3978E5';
+}
 
 const F = { h1: 'Montserrat_800ExtraBold', bold: 'Montserrat_700Bold', semi: 'Montserrat_600SemiBold', body: 'Roboto_400Regular', bodyMed: 'Roboto_500Medium', bodyBold: 'Roboto_700Bold' };
 
@@ -121,6 +139,7 @@ export default function AgendaScreen() {
   const [eventType, setEventType] = useState<EventType>('materia');
   const [building, setBuilding] = useState('');
   const [classroom, setClassroom] = useState('');
+  const [eventColor, setEventColor] = useState(PALETA_EVENTOS[3].color);
 
   useEffect(() => {
     AsyncStorage.getItem(STORAGE_KEY)
@@ -149,6 +168,16 @@ export default function AgendaScreen() {
     [eventosMaterias, customEvents]
   );
   const eventDates = useMemo(() => new Set(allEvents.map((e) => e.date)), [allEvents]);
+  const eventColorsByDate = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const ev of allEvents) {
+      const colors = result.get(ev.date) ?? [];
+      const color = colorDelEvento(ev);
+      if (!colors.includes(color) && colors.length < 4) colors.push(color);
+      result.set(ev.date, colors);
+    }
+    return result;
+  }, [allEvents]);
 
   const calendarDays = useMemo(() => {
     const first = new Date(year, month, 1);
@@ -181,13 +210,14 @@ export default function AgendaScreen() {
     setEventType('materia');
     setBuilding('');
     setClassroom('');
+    setEventColor(PALETA_EVENTOS[3].color);
     setModalOpen(true);
   };
 
   const saveEvent = () => {
     const cleanTitle = title.trim();
     if (!cleanTitle) return Alert.alert('Falta el título', 'Escribí un título para el evento.');
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parseKey(date).getTime())) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(parseKey(date).getTime()) || keyOf(parseKey(date)) !== date) {
       return Alert.alert('Fecha inválida', 'Usá el formato AAAA-MM-DD, por ejemplo 2026-10-17.');
     }
     if (startTime && endTime && endTime <= startTime) {
@@ -196,7 +226,7 @@ export default function AgendaScreen() {
     const cleanClassroom = classroom.trim().replace(/^aula\s*/i, '');
     const place = [cleanClassroom ? (/^\d+$/.test(cleanClassroom) ? `Aula ${cleanClassroom}` : cleanClassroom) : '', building].filter(Boolean).join(' · ');
     const event: AgendaEvent = {
-      id: `c${Date.now()}`, custom: true, type: eventType, title: cleanTitle, date,
+      id: `c${Date.now()}`, custom: true, type: eventType, title: cleanTitle, date, color: eventColor,
       ...(startTime ? { start: startTime } : {}),
       ...(endTime ? { end: endTime } : {}),
       ...(eventType === 'materia'
@@ -251,6 +281,7 @@ export default function AgendaScreen() {
             {calendarDays.map((day) => {
               const isSelected = selectedDate === day.date;
               const isToday = todayKey === day.date;
+              const dayColors = eventColorsByDate.get(day.date) ?? [];
               const hasEvent = eventDates.has(day.date);
               return (
                 <Pressable
@@ -269,7 +300,13 @@ export default function AgendaScreen() {
                   <View style={[s.dayNum, isToday && { borderColor: K.ring }, isSelected && { backgroundColor: K.sel, borderColor: K.sel }]}>
                     <Text style={[s.dayTxt, { color: isSelected ? '#fff' : day.inMonth ? K.dayTx : K.dayOut }]}>{day.day}</Text>
                   </View>
-                  {hasEvent && <View style={[s.mark, { backgroundColor: isSelected ? '#fff' : K.sel }, isSelected && { width: 12, bottom: 5 }]} />}
+                  {hasEvent && (
+                    <View style={s.marksRow}>
+                      {dayColors.map((color, index) => (
+                        <View key={`${day.date}-${color}-${index}`} style={[s.markDot, { backgroundColor: isSelected ? '#fff' : color }]} />
+                      ))}
+                    </View>
+                  )}
                 </Pressable>
               );
             })}
@@ -293,11 +330,12 @@ export default function AgendaScreen() {
               const d = parseKey(ev.date);
               const fechaLarga = `${WEEKDAYS[d.getDay()]} ${d.getDate()} de ${MONTHS[d.getMonth()].toLowerCase()} de ${d.getFullYear()}`;
               const hayLugar = !!ev.place && ev.modo !== 'virtual';
+              const colorEvento = colorDelEvento(ev);
               return (
-                <View key={ev.id} style={[s.eventCard, { backgroundColor: W.card }]}>
+                <View key={ev.id} style={[s.eventCard, { backgroundColor: W.card, borderLeftColor: colorEvento, borderLeftWidth: 5 }]}>
                   <Pressable style={s.event} onPress={() => setAbiertoId(abierto ? null : ev.id)}>
-                    <View style={[s.evIco, { backgroundColor: W.sq }]}>
-                      <Icono src={ev.type === 'aviso' ? ICONOS.campana : ICONOS.calendario} size={20} tint={K.evIcoTx} />
+                    <View style={[s.evIco, { backgroundColor: `${colorEvento}20` }]}>
+                      <Icono src={ev.type === 'aviso' ? ICONOS.campana : ICONOS.calendario} size={20} tint={colorEvento} />
                     </View>
 
                     <View style={{ flex: 1, gap: 3 }}>
@@ -421,6 +459,25 @@ export default function AgendaScreen() {
               <Text style={[s.label, { color: C.dim }]}>Fecha (AAAA-MM-DD)</Text>
               <TextInput value={date} onChangeText={setDate} placeholder="2026-10-17" placeholderTextColor={C.dim} autoCapitalize="none" style={inputStyle} />
 
+              <Text style={[s.label, { color: C.dim }]}>Color del evento</Text>
+              <View style={s.colorPalette}>
+                {PALETA_EVENTOS.map((item) => {
+                  const selected = eventColor === item.color;
+                  return (
+                    <Pressable
+                      key={item.color}
+                      accessibilityLabel={`Elegir color ${item.nombre}`}
+                      accessibilityRole="button"
+                      onPress={() => setEventColor(item.color)}
+                      style={[s.colorOption, { backgroundColor: item.color, borderColor: selected ? C.text : 'transparent', borderWidth: selected ? 3 : 1 }]}
+                    >
+                      {selected && <Text style={s.colorCheck}>✓</Text>}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={[s.colorName, { color: C.dim }]}>{PALETA_EVENTOS.find((item) => item.color === eventColor)?.nombre ?? 'Personalizado'}</Text>
+
               <View style={{ flexDirection: 'row', gap: 10 }}>
                 <View style={{ flex: 1 }}>
                   <Text style={[s.label, { color: C.dim }]}>Desde (HH:MM)</Text>
@@ -482,7 +539,8 @@ function makeStyles() {
     dayCell: { width: `${100 / 7}%`, height: 40, alignItems: 'center', justifyContent: 'center' },
     dayNum: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: 'transparent' },
     dayTxt: { fontFamily: F.bodyMed, fontSize: 13.5 },
-    mark: { position: 'absolute', bottom: 2, width: 16, height: 2.5, borderRadius: 2 },
+    marksRow: { position: 'absolute', bottom: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 2, maxWidth: '90%' },
+    markDot: { width: 5, height: 5, borderRadius: 3 },
 
     sectionHead: { marginHorizontal: 2, marginTop: 20, marginBottom: 10, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8 },
     sectionTitle: { fontFamily: F.bold, fontSize: 15, flexShrink: 1 },
@@ -519,6 +577,10 @@ function makeStyles() {
     types: { flexDirection: 'row', gap: 8 },
     typeOpt: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8 },
     chipB: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8 },
+    colorPalette: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, paddingVertical: 5 },
+    colorOption: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+    colorCheck: { color: '#FFFFFF', fontFamily: F.bodyBold, fontSize: 16, textShadowColor: 'rgba(0,0,0,0.35)', textShadowRadius: 2 },
+    colorName: { fontFamily: F.body, fontSize: 12, marginTop: 1 },
     actions: { flexDirection: 'row', gap: 10, marginTop: 22, marginBottom: 8 },
     btn: { alignItems: 'center', justifyContent: 'center', paddingVertical: 14, borderRadius: 14 },
   });
