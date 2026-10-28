@@ -426,7 +426,7 @@ export default function AgendaScreen() {
         <View style={s.newRow}>
           <Text style={[s.sectionTitle, { color: W.ink }]}>Evento nuevo</Text>
           <Pressable accessibilityLabel="Crear evento nuevo" onPress={() => openForm()} style={[s.plus, { backgroundColor: W.sq }]}>
-            <Icono src={ICONOS.mas} size={15} tint={K.evIcoTx} />
+            <Icono src={ICONOS.mas} size={20} tint={K.evIcoTx} />
           </Pressable>
         </View>
       </ScrollView>
