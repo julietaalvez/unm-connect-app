@@ -17,7 +17,7 @@ export default function LoginScreen({
   onGoToRegister,
 }: {
   onLoginSuccess?: () => void;
-   onGoToRegister?: () => void;
+  onGoToRegister?: () => void;
 }) {
   const { theme } = useAppTheme();
   const isDark = theme === 'dark';
@@ -53,7 +53,8 @@ export default function LoginScreen({
         setError(data.error ?? 'No se pudo iniciar sesión.');
         return;
       }
-      guardarUsuario(data.usuario);
+      // Si el servidor todavía no manda el rol, se toma como alumno
+      guardarUsuario({ ...data.usuario, rol: data.usuario?.rol ?? 'alumno' });
       onLoginSuccess?.();
     } catch {
       setError('No hay conexión con el servidor. Probá de nuevo.');
@@ -103,19 +104,17 @@ export default function LoginScreen({
         </Text>
       </Pressable>
 
-      <Pressable style={[styles.newAccount, { backgroundColor: colors.card }]}>
+      <Pressable
+        style={[styles.newAccount, { backgroundColor: colors.card }]}
+        onPress={onGoToRegister}>
         <Text style={[styles.newAccountText, { color: colors.link }]}>
           Crear cuenta nueva
         </Text>
       </Pressable>
-      <Pressable style={[styles.newAccount, { backgroundColor: colors.card }]} onPress={onGoToRegister}>
-  <Text style={[styles.newAccountText, { color: colors.link }]}>
-    Crear cuenta nueva
-  </Text>
-</Pressable>
     </View>
   );
 }
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
