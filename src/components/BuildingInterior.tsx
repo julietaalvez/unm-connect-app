@@ -11,8 +11,9 @@ import {
 } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
 import { AMENITIES, Comodidades, EDIFICIOS, NOTES, Piso, SCHEDULE } from '../data/edificios';
-import { fotoDeEdificio } from '../data/fotosEdificios';
+import { fotoDeEdificio, fotoDeEspacio } from '../data/fotosEdificios';
 import { TAM_ICONO, TipoIcono, centroVisual, tipoIcono } from '../data/iconos';
+import type { NombreIcono } from '../data/iconosUI';
 import { cargarAulas } from '../lib/api';
 import { esOscuro, mezclar } from '../lib/colores';
 import {
@@ -34,7 +35,6 @@ import HeaderMapa from './HeaderMapa';
 import IconoEspacio from './IconoEspacio';
 import IconoUI from './IconoUI';
 import { BarraSuperior, BotonesZoom, Chip as ChipMapa, FilaChips, Hoja, subeBotones, useTeclado } from './MapaUI';
-
 const fillDe = (C: Colores) => ({
   aula: { fill: C.aulaFill, stroke: C.aulaStroke, selFill: C.aulaSel, selStroke: C.aulaSelStroke },
   bano: { fill: C.banoFill, stroke: C.banoStroke, selFill: C.banoSel, selStroke: C.banoSelStroke },
@@ -356,7 +356,7 @@ export default function BuildingInterior({ buildingId, onBack, inicial }: Props)
           <ScrollView style={{ maxHeight: winH * 0.45 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
             <FichaEspacio
               nombreEdificio={ed.name}
-              foto={foto}
+               foto={fotoDeEspacio(forma.id) ?? foto}
               piso={floor}
               id={forma.id}
               ruta={ruta}
@@ -431,11 +431,11 @@ function FichaEspacio({
       {tipo === 'aula' &&
         (am ? (
           <View style={s.amenities}>
-            <Chip ic="🔌" txt={`${am.enchufes} enchufes`} />
-            <Chip ic="📶" txt="Wifi" off={!am.wifi} />
-            <Chip ic="📽️" txt="Proyector" off={!am.proyector} />
-            <Chip ic="♿" txt="Accesible" off={!am.accesible} />
-            <Chip ic="👥" txt={`${am.capacidad} pers.`} />
+            <Chip ic="enchufe" txt={`${am.enchufes} enchufes`} />
+<Chip ic="wifi" txt="Wifi" off={!am.wifi} />
+<Chip ic="proyector" txt="Proyector" off={!am.proyector} />
+<Chip ic="accesible" txt="Accesible" off={!am.accesible} />
+<Chip ic="personas" txt={`${am.capacidad} pers.`} />
           </View>
         ) : (
           <View style={s.card}>
@@ -475,11 +475,11 @@ function FichaEspacio({
   );
 }
 
-function Chip({ ic, txt, off }: { ic: string; txt: string; off?: boolean }) {
+function Chip({ ic, txt, off }: { ic: NombreIcono; txt: string; off?: boolean }) {
   const { C, s } = useEstilos();
   return (
     <View style={[s.chip, off && { opacity: 0.35 }]}>
-      <Text style={{ fontSize: 13 }}>{ic}</Text>
+            <IconoUI nombre={ic} size={16} color={C.text} />
       <Text style={[{ fontSize: 11.5, color: C.text }, off && { textDecorationLine: 'line-through' }]}>{txt}</Text>
     </View>
   );

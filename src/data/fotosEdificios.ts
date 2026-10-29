@@ -10,6 +10,9 @@ const FOTOS: Record<string, ImageSourcePropType> = {
   dorrego1: require('../../assets/images/dorrego1.jpg'),
   dorrego2: require('../../assets/images/dorrego2.jpg'),
   espum: require('../../assets/images/espum.jpg'),
+  historico: require('../../assets/images/historico.jpeg'),
+  laboratorio: require('../../assets/images/laboratorio.jpeg'),
+  comedor:require('../../assets/images/aulasp.jpeg'),
 };
 
 // "edificio-daract2", "Daract II" y "daract2" dan todos la misma clave: "daract2"
@@ -34,4 +37,13 @@ export function fotoDeEdificio(id: string, label: string): ImageSourcePropType |
     if (k) return FOTOS[k];
   }
   return undefined;
+}
+const FOTOS_ESPACIOS: Record<string, any> = {
+  'oficina-buffet': require('../../assets/images/buffet.jpeg'),
+  'oficina-p004': require('../../assets/images/centroestudiantes.jpeg'),
+  'oficina-p009': require('../../assets/images/fotocopiadora.jpeg'),
+};
+
+export function fotoDeEspacio(id: string) {
+  return FOTOS_ESPACIOS[id];
 }

@@ -11,6 +11,9 @@ export const ETIQUETAS: Record<string, string> = {
   "bano-j3": "Baño J3",
   "aula-j002": "J002",
   "aula-j001": "J001",
+  "aula-j101": "J101",
+  "bano-p1-j-1": "Baños J (1° piso)",
+  "escalera-j-p1-baja": "Escalera J (baja a Planta Baja)",
   "aula-k001": "K001",
   "aula-k005": "K005",
   "aula-k007": "K007",
@@ -235,7 +238,8 @@ export const HISTORICO: Edificio = {
         {"id": "entrada-escalera-b", "label": "Cerca de Escalera B", "x": 390.3, "y": 536.0},
         {"id": "entrada-escalera-dc", "label": "Cerca de Escalera C", "x": 314.5, "y": 535.7},
         {"id": "entrada-escalera-f", "label": "Cerca de Escalera F", "x": 765.3, "y": 537.6},
-        {"id": "entrada-escalera-h", "label": "Cerca de Escalera H", "x": 919.5, "y": 540.1}
+        {"id": "entrada-escalera-h", "label": "Cerca de Escalera H", "x": 919.5, "y": 540.1},
+        {"id": "entrada-escalera-j", "label": "Cerca de Escalera J", "x": 1076.5, "y": 539.9}
       ],
       shapes: [
         {"id": "espaciolibre-verde-1", "d": "M1300.0 80.0 L1300.0 700.0 L30.0 700.0 L30.0 80.0 Z", "cx": 665.0, "cy": 390.0, "x": 30.0, "y": 80.0, "w": 1270.0, "h": 620.0},
@@ -388,7 +392,8 @@ export const HISTORICO: Edificio = {
         {"id": "entrada-escalera-f-p1-sube", "label": "Cerca de Escalera F (sube al 2° piso)", "x": 765.3, "y": 539.2},
         {"id": "entrada-escalera-h-p1-baja", "label": "Cerca de Escalera H (baja a Planta Baja)", "x": 915.4, "y": 547.2},
         {"id": "entrada-escalera-h-p1-sube", "label": "Cerca de Escalera H (sube al 2° piso)", "x": 914.9, "y": 539.2},
-        {"id": "entrada-escalera-a-p1-baja", "label": "Cerca de Escalera A (baja a Planta Baja)", "x": 468.6, "y": 545.8}
+        {"id": "entrada-escalera-a-p1-baja", "label": "Cerca de Escalera A (baja a Planta Baja)", "x": 468.6, "y": 545.8},
+        {"id": "entrada-escalera-j-p1-baja", "label": "Cerca de Escalera J (baja a Planta Baja)", "x": 1076.6, "y": 543.8}
       ],
       shapes: [
         {"id": "espaciolibre-verde-1", "d": "M1300.0 80.0 L1300.0 700.0 L30.0 700.0 L30.0 80.0 Z", "cx": 665.0, "cy": 390.0, "x": 30.0, "y": 80.0, "w": 1270.0, "h": 620.0},
@@ -433,6 +438,10 @@ export const HISTORICO: Edificio = {
         {"id": "bano-p1-a-f1", "d": "M495.08 532.74 L480.93 532.74 L480.93 549.27 L495.08 549.27 Z", "cx": 488.0, "cy": 541.0, "x": 480.93, "y": 532.74, "w": 14.15, "h": 16.53},
         {"id": "oficina-a101", "d": "M488.43 488.34 L469.41 488.34 L469.41 532.3 L488.43 532.3 Z", "cx": 478.92, "cy": 510.32, "x": 469.41, "y": 488.34, "w": 19.02, "h": 43.96},
         {"id": "nulo-p1-4", "d": "M508.25 549.39 L495.86 549.39 L495.86 561.26 L508.25 561.26 Z", "cx": 502.06, "cy": 555.33, "x": 495.86, "y": 549.39, "w": 12.39, "h": 11.87},
+        {"id": "espaciolibre-pasillo-p1-3", "d": "M1108.70 543.33 L1108.70 562.04 L1078.57 562.04 L1078.57 535.30 L1082.87 535.30 L1082.87 549.39 L1102.44 549.39 L1102.44 543.33 Z", "cx": 1093.64, "cy": 548.67, "x": 1078.57, "y": 535.30, "w": 30.13, "h": 26.74},
+        {"id": "aula-j101", "d": "M1156.83 534.51 L1156.83 562.05 L1110.65 562.05 L1110.65 534.51 Z", "cx": 1133.74, "cy": 548.28, "x": 1110.65, "y": 534.51, "w": 46.18, "h": 27.54},
+        {"id": "bano-p1-j-1", "d": "M1108.70 534.07 L1108.70 541.48 L1100.05 541.48 L1100.05 548.54 L1084.83 548.54 L1084.83 534.08 L1100.05 534.08 Z", "cx": 1096.77, "cy": 541.31, "x": 1084.83, "y": 534.07, "w": 23.87, "h": 14.47},
+        {"id": "escalera-j-p1-baja", "d": "M1077.0 535.19 L1077.0 549.42 L1068.0 549.42 L1068.0 535.19 Z", "cx": 1072.5, "cy": 542.3, "x": 1068.0, "y": 535.19, "w": 9.0, "h": 14.23},
         {"id": "aula-b101", "d": "M410.8 488.57 L391.96 488.57 L391.96 532.72 L410.8 532.72 Z", "cx": 401.38, "cy": 510.64, "x": 391.96, "y": 488.57, "w": 18.84, "h": 44.15},
         {"id": "oficina-a102", "d": "M458.22 532.72 L437.09 532.72 L437.09 549.27 L458.22 549.27 Z", "cx": 447.66, "cy": 541.0, "x": 437.09, "y": 532.72, "w": 21.13, "h": 16.55},
         {"id": "oficina-b103", "d": "M368.87 532.77 L358.7 532.77 L358.7 549.25 L368.87 549.25 Z", "cx": 363.78, "cy": 541.01, "x": 358.7, "y": 532.77, "w": 10.17, "h": 16.48},
@@ -1052,6 +1061,15 @@ export const HISTORICO: Edificio = {
         "a1-p17": [475.0, 537.5],
         "a1-p18": [320.5, 537.5],
         "a1-p19": [489.5, 555.0],
+        "entrada-escalera-j-p1-baja": [1076.6, 543.8],
+        "a1-j1": [1080.7, 543.8],
+        "j-entrada-bano-p1-j-1": [1080.7, 538.8],
+        "entrada-bano-p1-j-1": [1084.8, 538.8],
+        "a1-j2": [1080.7, 555.7],
+        "a1-j3": [1105.6, 555.7],
+        "a1-j4": [1105.6, 546.6],
+        "entrada-bano-p1-j-2": [1105.0, 541.5],
+        "entrada-aula-j101": [1111.4, 546.6],
         "entrada-oficina-g101": [833.9, 535.2],
         "entrada-escalera-g-p1-sube": [838.4, 538.8],
         "entrada-bano-p1-g-m1": [828.2, 538.8],
@@ -1200,7 +1218,15 @@ export const HISTORICO: Edificio = {
         ["a1-p18", "entrada-bano-p1-c-f1"],
         ["a1-p18", "entrada-escalera-c-p1-sube"],
         ["j-entrada-escalera-c-p1-baja", "a1-p18"],
-        ["a1-p15", "a1-p19"]
+        ["a1-p15", "a1-p19"],
+        ["a1-j1", "entrada-escalera-j-p1-baja"],
+        ["a1-j1", "j-entrada-bano-p1-j-1"],
+        ["j-entrada-bano-p1-j-1", "entrada-bano-p1-j-1"],
+        ["a1-j1", "a1-j2"],
+        ["a1-j2", "a1-j3"],
+        ["a1-j3", "a1-j4"],
+        ["a1-j4", "entrada-bano-p1-j-2"],
+        ["a1-j4", "entrada-aula-j101"]
       ],
     },
     "Segundo Piso": {
@@ -1516,6 +1542,9 @@ export const HISTORICO: Edificio = {
     "oficina-g101": ["entrada-oficina-g101"],
     "bano-p1-h-f1": ["entrada-bano-p1-h-f1-1", "entrada-bano-p1-h-f1-2"],
     "aula-h101": ["entrada-aula-h101"],
+    "aula-j101": ["entrada-aula-j101"],
+    "bano-p1-j-1": ["entrada-bano-p1-j-1", "entrada-bano-p1-j-2"],
+    "escalera-j-p1-baja": ["entrada-escalera-j-p1-baja"],
     "aula-h102": ["entrada-aula-h102"],
     "escalera-h-p1-baja": ["entrada-escalera-h-p1-baja"],
     "aula-h103": ["entrada-aula-h103"],
@@ -1591,6 +1620,7 @@ export const HISTORICO: Edificio = {
     {"Primer Piso": "entrada-escalera-f-p1-sube", "Segundo Piso": "entrada-escalera-f-p2-baja"},
     {"Planta Baja": "entrada-escalera-h", "Primer Piso": "entrada-escalera-h-p1-baja"},
     {"Primer Piso": "entrada-escalera-h-p1-sube", "Segundo Piso": "entrada-escalera-h-p2-baja"},
-    {"Primer Piso": "entrada-escalera-g-p1-sube", "Segundo Piso": "entrada-escalera-g-p2-baja"}
+    {"Primer Piso": "entrada-escalera-g-p1-sube", "Segundo Piso": "entrada-escalera-g-p2-baja"},
+    {"Planta Baja": "entrada-escalera-j", "Primer Piso": "entrada-escalera-j-p1-baja"}
   ],
 };
