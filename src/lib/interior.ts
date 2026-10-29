@@ -1,4 +1,5 @@
 import type { Edificio, Forma, Punto } from '../data/edificios';
+import { ETIQUETAS } from '../data/historico';
 
 /* ---------- tipos ---------- */
 export type TipoEspacio = 'aula' | 'bano' | 'serv' | 'muted';
@@ -6,7 +7,8 @@ export type Ubicacion = { floor: string; pointId: string };
 export type Coord = { x: number; y: number };
 /** Un paso de la ruta: trozos de texto, algunos en negrita */
 export type Paso = { t: string; b?: boolean }[];
-export type Ruta = { points: Coord[]; pasos: Paso[] };
+/** points = tramo final (en el piso del destino). legs = el recorrido completo, piso por piso */
+export type Ruta = { points: Coord[]; pasos: Paso[]; legs?: { floor: string; points: Coord[] }[] };
 
 /* ---------- clasificación y nombres ---------- */
 export function classify(id: string): TipoEspacio {
@@ -19,6 +21,7 @@ export function classify(id: string): TipoEspacio {
 }
 
 export function labelFor(id: string): string | null {
+  if (ETIQUETAS[id]) return ETIQUETAS[id];
   if (id === 'aula-sum') return 'SUM';
   if (id.startsWith('biblioteca')) return 'Biblioteca';
   if (id.startsWith('bedelia')) return 'Bedelía';
@@ -118,53 +121,119 @@ function routeToRoom(ed: Edificio, floor: string, fromId: string, roomId: string
   return best;
 }
 
-function nearestStairLink(ed: Edificio, targetFloor: string, cx: number) {
-  let best: { d: number; link: Record<string, string> } | null = null;
-  for (const link of ed.stairs) {
-    const tp = pointById(ed, targetFloor, link[targetFloor]);
-    const d = Math.abs(tp.x - cx);
-    if (!best || d < best.d) best = { d, link };
-  }
-  return best!.link;
+/** nombre corto de una escalera a partir del cartel del punto ("Cerca de Escalera A (sube…)" -> "escalera a") */
+function nombreEscalera(label: string) {
+  return label.replace('Cerca de ', '').replace(/\s*\(.*\)\s*$/, '').toLowerCase();
 }
 
-/* ---------- ruta completa (mismo piso o con escalera) ---------- */
+/** Camino más corto entre cualquier punto de cualquier piso, pasando por las escaleras si hace falta */
+function caminoEntrePisos(ed: Edificio, mi: Ubicacion, targetFloor: string, roomId: string) {
+  const orden = Object.keys(ed.floors);
+  const key = (f: string, id: string) => f + '|' + id;
+  const adj = new Map<string, [string, number][]>();
+  const add = (a: string, b: string, w: number) => {
+    if (!adj.has(a)) adj.set(a, []);
+    if (!adj.has(b)) adj.set(b, []);
+    adj.get(a)!.push([b, w]);
+    adj.get(b)!.push([a, w]);
+  };
+  for (const f of orden) {
+    const g = ed.graph[f];
+    if (!g) continue;
+    for (const [a, b] of g.edges) {
+      const [ax, ay] = g.nodes[a];
+      const [bx, by] = g.nodes[b];
+      add(key(f, a), key(f, b), Math.hypot(ax - bx, ay - by));
+    }
+  }
+  // escaleras: unen el punto de un piso con el del piso de al lado (cuesta como ~40 m de camino)
+  for (const link of ed.stairs) {
+    const pisos = orden.filter((f) => link[f]);
+    for (let i = 0; i < pisos.length - 1; i++) add(key(pisos[i], link[pisos[i]]), key(pisos[i + 1], link[pisos[i + 1]]), 40);
+  }
+  const origen = key(mi.floor, mi.pointId);
+  if (!adj.has(origen)) return null;
+  const dist = new Map<string, number>([[origen, 0]]);
+  const prev = new Map<string, string>();
+  const hecho = new Set<string>();
+  const cola: string[] = [origen];
+  while (cola.length) {
+    let bi = 0;
+    for (let i = 1; i < cola.length; i++) if (dist.get(cola[i])! < dist.get(cola[bi])!) bi = i;
+    const u = cola.splice(bi, 1)[0];
+    if (hecho.has(u)) continue;
+    hecho.add(u);
+    for (const [v, w] of adj.get(u) ?? []) {
+      const nd = dist.get(u)! + w;
+      if (nd < (dist.get(v) ?? Infinity)) {
+        dist.set(v, nd);
+        prev.set(v, u);
+        cola.push(v);
+      }
+    }
+  }
+  let mejor: string | null = null;
+  for (const d of ed.entrances[roomId] ?? []) {
+    const k = key(targetFloor, d);
+    if (dist.has(k) && (mejor === null || dist.get(k)! < dist.get(mejor)!)) mejor = k;
+  }
+  if (!mejor) return null;
+  const ruta = [mejor];
+  while (ruta[0] !== origen) ruta.unshift(prev.get(ruta[0])!);
+  // se corta en tramos, uno por piso
+  const legs: { floor: string; ids: string[] }[] = [];
+  for (const k of ruta) {
+    const [f, id] = [k.slice(0, k.indexOf('|')), k.slice(k.indexOf('|') + 1)];
+    const ult = legs[legs.length - 1];
+    if (ult && ult.floor === f) ult.ids.push(id);
+    else legs.push({ floor: f, ids: [id] });
+  }
+  return legs.map((l) => ({
+    floor: l.floor,
+    ids: l.ids,
+    points: l.ids.map((id) => ({ x: ed.graph[l.floor].nodes[id][0], y: ed.graph[l.floor].nodes[id][1] })),
+  }));
+}
+
+/* ---------- ruta completa (mismo piso o con escaleras, de un piso a otro) ---------- */
 export function calcularRuta(ed: Edificio, mi: Ubicacion, targetFloor: string, forma: Forma, label: string): Ruta {
   const origen = pointById(ed, mi.floor, mi.pointId);
   const orden = Object.keys(ed.floors);
-  let points: Coord[] | null = null;
-  let pasos: Paso[];
+  const tramos = caminoEntrePisos(ed, mi, targetFloor, forma.id);
 
-  if (mi.floor === targetFloor) {
-    const r = routeToRoom(ed, targetFloor, mi.pointId, forma.id);
-    if (r) points = [...r.path, { x: forma.cx, y: forma.cy }];
+  // sin datos de pasillo: línea en "L" como último recurso
+  if (!tramos) {
+    const pasos: Paso[] = [
+      [{ t: 'Salís desde ' }, { t: origen.label, b: true }, { t: ` en ${mi.floor}` }],
+      [{ t: 'Seguís hasta ' }, { t: label, b: true }, { t: ` (${targetFloor.toLowerCase()})` }],
+    ];
+    const pts = mi.floor === targetFloor ? [{ x: origen.x, y: origen.y }, { x: forma.cx, y: origen.y }, { x: forma.cx, y: forma.cy }] : [];
+    return { points: pts, pasos, legs: pts.length ? [{ floor: targetFloor, points: pts }] : [] };
+  }
+
+  const legs = tramos.map((t, i) => ({
+    floor: t.floor,
+    points: i === tramos.length - 1 ? [...t.points, { x: forma.cx, y: forma.cy }] : t.points,
+  }));
+
+  let pasos: Paso[];
+  if (tramos.length === 1) {
     pasos = [
       [{ t: 'Salís desde ' }, { t: origen.label, b: true }],
       [{ t: 'Seguís por el pasillo hasta la altura de ' }, { t: label, b: true }],
       [{ t: `Entrás — está en ${targetFloor.toLowerCase()}` }],
     ];
   } else {
-    const link = nearestStairLink(ed, targetFloor, forma.cx);
-    const stairOrigen = pointById(ed, mi.floor, link[mi.floor]);
-    const stairDestino = pointById(ed, targetFloor, link[targetFloor]);
-    const sube = orden.indexOf(targetFloor) > orden.indexOf(mi.floor) ? 'subís' : 'bajás';
-    const r = routeToRoom(ed, targetFloor, link[targetFloor], forma.id);
-    if (r) points = [...r.path, { x: forma.cx, y: forma.cy }];
-    else points = [{ x: stairDestino.x, y: stairDestino.y }, { x: forma.cx, y: stairDestino.y }, { x: forma.cx, y: forma.cy }];
-    const nombreEsc = stairOrigen.label.replace('Cerca de ', '').toLowerCase();
-    pasos = [
-      [{ t: 'Salís desde ' }, { t: origen.label, b: true }, { t: ` en ${mi.floor}` }],
-      [{ t: `Vas hasta la ${nombreEsc} y ${sube} a ` }, { t: targetFloor, b: true }],
-      [{ t: `Ya en ${targetFloor}, seguís por el pasillo hasta ` }, { t: label, b: true }],
-    ];
+    pasos = [[{ t: 'Salís desde ' }, { t: origen.label, b: true }, { t: ` en ${mi.floor}` }]];
+    for (let i = 0; i < tramos.length - 1; i++) {
+      const salida = pointById(ed, tramos[i].floor, tramos[i].ids[tramos[i].ids.length - 1]);
+      const nuevo = tramos[i + 1].floor;
+      const sube = orden.indexOf(nuevo) > orden.indexOf(tramos[i].floor) ? 'subís' : 'bajás';
+      pasos.push([{ t: `Vas hasta la ${salida ? nombreEscalera(salida.label) : 'escalera'} y ${sube} a ` }, { t: nuevo, b: true }]);
+    }
+    pasos.push([{ t: `Ya en ${targetFloor}, seguís por el pasillo hasta ` }, { t: label, b: true }]);
   }
-
-  if (!points) {
-    // sin datos de pasillo: línea en "L" como último recurso
-    const start = mi.floor === targetFloor ? origen : pointById(ed, targetFloor, nearestStairLink(ed, targetFloor, forma.cx)[targetFloor]);
-    points = [{ x: start.x, y: start.y }, { x: forma.cx, y: start.y }, { x: forma.cx, y: forma.cy }];
-  }
-  return { points, pasos };
+  return { points: legs[legs.length - 1].points, pasos, legs };
 }
 
 export function rutaToPath(points: Coord[]): string {

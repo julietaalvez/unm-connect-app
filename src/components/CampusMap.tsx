@@ -1,21 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import { Animated, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import Svg, { Circle, Ellipse, Path, Polygon, Text as SvgText } from 'react-native-svg';
 
-import { BUILDINGS, Building, FIELD, GATES, PATH_D, PATH_POLYGONS } from '../data/campus';
+import { Building, BUILDINGS, FIELD, GATES, PATH_D, PATH_POLYGONS, ROADS_D } from '../data/campus';
 import { EDIFICIOS_CON_INTERIOR } from '../data/edificios';
 import { fotoDeEdificio } from '../data/fotosEdificios';
+import { MapaVista, useMapaGestos } from '../lib/MapaZoom';
+import { buscarEnTodos } from '../lib/buscadorGlobal';
+import { aSvg, puertaMasCercana } from '../lib/calibracion';
 import { GATE_LABELS, PuertaCampus, rutaCampus } from '../lib/campusRuta';
+import { esOscuro, mezclar } from '../lib/colores';
 import { Paso, rutaToPath } from '../lib/interior';
 import { Colores, useTema } from '../lib/tema';
-import HeaderMapa from './HeaderMapa';
-import { aSvg, puertaMasCercana } from '../lib/calibracion';
 import { useUbicacion } from '../lib/ubicacion';
+import HeaderMapa from './HeaderMapa';
+import IconoUI from './IconoUI';
+import { BarraSuperior, BotonesZoom, Chip, FilaChips, Hoja, subeBotones, useTeclado } from './MapaUI';
 
-const VB_X = -70;
-const VB_W = 1270;
-const VB_H = 860;
-const LABEL_PX = 13; // tamaño de letra legible en pantalla
+// Recuadro del mapa nuevo: entra TODO el campus
+const VB_X = -15;
+const VB_Y = 25;
+const VB_W = 930;
+const VB_H = 785;
+const ZOOM_MAX = 6;
+const ZOOM_INICIAL = 1.3;
+const ARRIBA = 120; // lo que tapan el buscador y el chip de arriba
 
 const FOTO_CAMPUS = require('../../assets/images/campus-foto.jpg');
 
@@ -71,32 +80,44 @@ function Cartel({ C, x, y, size, weight = '700', rotation, origin, children }: a
   );
 }
 
-type Props = { onEnterBuilding?: (id: string) => void };
+type Props = { onEnterBuilding?: (id: string, destino?: { floor: string; id: string }) => void };
 type RutaState = { points: { x: number; y: number }[]; pasos: Paso[] } | null;
 
 export default function CampusMap({ onEnterBuilding }: Props) {
   const { C } = useTema();
   const s = useMemo(() => makeStyles(C), [C]);
-  const { width } = useWindowDimensions();
+  const { width, height: winH } = useWindowDimensions();
 
   const [selected, setSelected] = useState<Building | null>(null);
   const [origen, setOrigen] = useState<PuertaCampus>('mitre');
   const [whereOpen, setWhereOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [sinResultado, setSinResultado] = useState(false);
+  const [listaAbierta, setListaAbierta] = useState(false);
   const [ruta, setRuta] = useState<RutaState>(null);
   const [errorRuta, setErrorRuta] = useState<string | null>(null);
 
-  const scrollRef = useRef<ScrollView>(null);
-  const mapScrollRef = useRef<ScrollView>(null);
-  const scrollX = useRef(0);
-  const [zoom, setZoom] = useState(width < 600 ? 2.4 : 1);
-  const [cardW, setCardW] = useState(Math.max(280, Math.min(width, 900) - 36));
+  const oscuro = esOscuro(C.bg);
+  const VERDE = oscuro ? mezclar(C.field, C.mapBg, 0.3) : mezclar(C.field, '#ffffff', 0.5); // verde más suave
 
-  const mapWidth = cardW * zoom; // el mapa es más ancho que la tarjeta: se desliza con el dedo
-  const mapHeight = (mapWidth * VB_H) / VB_W;
-  const fontSize = LABEL_PX / (mapWidth / VB_W);
-  const radioPunto = 9 / (mapWidth / VB_W);
+  // el mapa ocupa toda la pantalla: se mide el espacio disponible
+  const [caja, setCaja] = useState({ w: width, h: winH * 0.8 });
+  const teclado = useTeclado();
+  // el alto "de verdad" (sin teclado): así el mapa no se recentra ni cambia de zoom cada vez que se abre el teclado
+  const hEstable = useRef(caja.h);
+  if (!teclado) hEstable.current = caja.h;
+  const [alturaHoja, setAlturaHoja] = useState(0);
+  const progHoja = useRef(new Animated.Value(1)).current; // 1 = ficha abierta, 0 = bajada
+  const cardW = caja.w;
+  const viewH = caja.h;
+  const baseH = (cardW * VB_H) / VB_W;
+  const m = useMapaGestos(ZOOM_INICIAL, { viewW: cardW, viewH, baseW: cardW, baseH, min: 1, max: ZOOM_MAX, arriba: ARRIBA });
+  const zoom = m.zoom;
+  const mapWidth = cardW * zoom;
+  const mapHeight = baseH * zoom;
+  const scale = mapWidth / VB_W; // píxeles de pantalla por unidad del mapa
+  const labelPx = Math.min(13, 6.5 + zoom * 1.5); // la letra crece al acercar
+  const fontSize = labelPx / scale;
+  const radioPunto = 9 / scale;
 
   const ub = useUbicacion();
   const miPos = useMemo(() => (ub.punto ? aSvg(ub.punto) : null), [ub.punto]);
@@ -112,19 +133,11 @@ export default function CampusMap({ onEnterBuilding }: Props) {
     : cerca ? `Estás a ${Math.round(cerca.metros)} m de ${GATE_LABELS[cerca.id]}`
     : '';
 
-  // centrar el mapa al abrir
+  // al abrir: el campus entero, centrado
   useEffect(() => {
-    const id = setTimeout(() => mapScrollRef.current?.scrollTo({ x: Math.max(0, (mapWidth - cardW) / 2), animated: false }), 30);
-    return () => clearTimeout(id);
+    m.centrarEn(ZOOM_INICIAL, ((450 - VB_X) / VB_W) * cardW, ((420 - VB_Y) / VB_H) * baseH);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardW]);
-
-  function cambiarZoom(factor: number) {
-    const nuevo = Math.max(1, Math.min(4.5, zoom * factor));
-    const fx = (scrollX.current + cardW / 2) / mapWidth;
-    setZoom(nuevo);
-    setTimeout(() => mapScrollRef.current?.scrollTo({ x: fx * cardW * nuevo - cardW / 2, animated: false }), 0);
-  }
+  }, [cardW, hEstable.current]);
 
   const centros = useMemo(
     () => Object.fromEntries(BUILDINGS.map((b) => [b.id, centro(b.points)])),
@@ -142,37 +155,27 @@ export default function CampusMap({ onEnterBuilding }: Props) {
   function elegir(b: Building) {
     setSelected(b);
     limpiarRuta();
-    // centra el mapa sobre el edificio
+    // acerca y centra el mapa sobre el edificio
     const c = centros[b.id];
     if (c) {
-      const x = ((c.x - VB_X) / VB_W) * mapWidth - cardW / 2;
-      mapScrollRef.current?.scrollTo({ x: Math.max(0, x), animated: true });
+      m.irA(Math.max(m.zoomRef.current, 1.8), ((c.x - VB_X) / VB_W) * cardW, ((c.y - VB_Y) / VB_H) * baseH);
     }
-    // baja hasta la ficha del edificio
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
   function buscar(texto: string) {
     setQuery(texto);
-    const q = norm(texto);
-    if (!q) {
-      setSinResultado(false);
-      return;
-    }
-    // 1) el nombre del edificio aparece dentro de lo escrito ("aula 5 daract 2" -> Daract II)
-    const dentro = BUILDINGS.filter((b) => q.includes(norm(b.label))).sort(
-      (a, b) => b.label.length - a.label.length
-    )[0];
-    // 2) lo escrito es parte del nombre ("dorr" -> Dorrego II)
-    const parcial = BUILDINGS.find((b) => norm(b.label).includes(q));
-    const b = dentro ?? parcial;
-    if (b) {
-      setSinResultado(false);
-      elegir(b);
-    } else {
-      setSinResultado(true);
-    }
+    setListaAbierta(true);
   }
+
+  // lo que se muestra mientras escribís: edificios y, debajo, cualquier aula u oficina de los planos
+  const q = norm(query);
+  const edificiosHallados = useMemo(
+    () => (q ? BUILDINGS.filter((b) => norm(b.label).includes(q)).slice(0, 3) : []),
+    [q],
+  );
+  const espaciosHallados = useMemo(() => buscarEnTodos(query), [query]);
+  const hayLista = listaAbierta && (edificiosHallados.length > 0 || espaciosHallados.length > 0);
+  const sinResultado = listaAbierta && !!query.trim() && !hayLista;
 
   function comoLlegar() {
     if (!selected) return;
@@ -184,141 +187,70 @@ export default function CampusMap({ onEnterBuilding }: Props) {
       setErrorRuta(null);
       setRuta(r);
     }
-    setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 60);
   }
 
-  const gateSize = Math.min(fontSize, 24);
-  const corvTx = 36.3 - 7 - 10 - gateSize * 0.4;
+  const gateSize = fontSize;
+  const corvTx = 36.3 - 7 / scale - gateSize * 0.5;
 
   return (
-    <ScrollView
-      ref={scrollRef}
-      style={s.screen}
-      contentContainerStyle={{ paddingBottom: 160 }}
-      contentInsetAdjustmentBehavior="never"
-    >
+    <View style={s.raiz}>
       <HeaderMapa />
-      <Text style={s.subtitle}>Universidad Nacional de Moreno · Campus</Text>
-
-      {/* buscador */}
-      <View style={s.search}>
-        <Text style={{ color: '#8ea0c2' }}>🔍</Text>
-        <TextInput
-          value={query}
-          onChangeText={buscar}
-          placeholder="Buscar edificio (ej: Daract II)"
-          placeholderTextColor={C.placeholder}
-          style={s.searchInput}
-        />
-      </View>
-      {sinResultado && (
-        <Text style={[s.subtitle, { marginTop: -6 }]}>No encontramos ese edificio.</Text>
-      )}
-
-      {/* estás en */}
-      <Pressable style={s.whereBtn} onPress={() => setWhereOpen((o) => !o)}>
-        <Text style={{ color: C.dim, fontSize: 12.5, flex: 1 }}>
-          📍 Estás en: <Text style={{ color: C.text, fontWeight: '600' }}>{GATE_LABELS[origen]}</Text>
-        </Text>
-        <Text style={{ color: C.dim }}>{whereOpen ? '▴' : '▾'}</Text>
-      </Pressable>
-      {whereOpen && (
-        <View style={s.whereList}>
-          {(Object.keys(GATE_LABELS) as PuertaCampus[]).map((id) => {
-            const activo = id === origen;
-            return (
-              <Pressable
-                key={id}
-                style={[s.whereOpt, activo && { backgroundColor: C.elevated }]}
-                onPress={() => {
-                  setOrigen(id);
-                  setWhereOpen(false);
-                  limpiarRuta();
-                }}
-              >
-                <View style={s.dot} />
-                <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.pillTypeText, fontWeight: '600' }]}>{GATE_LABELS[id]}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
-      )}
-
-      <View style={s.gpsRow}>
-        <Text style={s.gpsTxt}>{textoGps}</Text>
-        {cerca && !lejos && (
-          <Pressable
-            style={s.gpsBtn}
-            onPress={() => {
-              setOrigen(cerca.id);
-              limpiarRuta();
-            }}
-          >
-            <Text style={s.gpsBtnTxt}>Usar mi ubicación</Text>
-          </Pressable>
-        )}
-      </View>
-
-      {/* mapa */}
-      <View style={s.mapCard} onLayout={(e) => setCardW(e.nativeEvent.layout.width - 2)}>
-        <View style={s.floorLabelRow}>
-          <Text style={s.floorLabel}>Campus</Text>
-          <Text style={s.floorLabel}>{BUILDINGS.length} edificios</Text>
-        </View>
-        <ScrollView
-          ref={mapScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={32}
-          onScroll={(e) => (scrollX.current = e.nativeEvent.contentOffset.x)}
-        >
-          <Svg width={mapWidth} height={mapHeight} viewBox={`${VB_X} 0 ${VB_W} ${VB_H}`}>
-            {FIELD.map((p, i) => (
-              <Polygon key={`f${i}`} points={p} fill={C.field} />
-            ))}
-            <Path d={PATH_D} fill={C.paths} opacity={0.9} />
+      <View style={s.pantalla} onLayout={(e) => setCaja({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+      {/* el mapa, a pantalla completa */}
+      <MapaVista m={m} viewW={cardW} viewH={viewH} baseW={cardW} baseH={baseH} arriba={ARRIBA}>
+          <Svg width={mapWidth} height={mapHeight} viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}>
+            {/* 1. terreno (contorno de la universidad) */}
+            <Path d={PATH_D} fill={C.paths} opacity={0.45} stroke={C.bldgStroke} strokeWidth={1.5 / scale} />
             {PATH_POLYGONS.map((p, i) => (
-              <Polygon key={`p${i}`} points={p} fill={C.paths} opacity={0.9} />
+              <Polygon key={`t${i}`} points={p} fill={C.paths} opacity={0.45} stroke={C.bldgStroke} strokeWidth={1.5 / scale} />
             ))}
-
+  
+            {/* 2. césped, encima del terreno */}
+            {FIELD.map((p, i) => (
+              <Polygon key={`f${i}`} points={p} fill={VERDE} />
+            ))}
+  
+            {/* 3. caminos, encima del césped */}
+            <Path d={ROADS_D} fill={C.paths} fillRule="evenodd" opacity={0.95} />
+  
             {BUILDINGS.map((b) => (
               <Polygon
                 key={b.id}
                 points={b.points}
                 fill={selected?.id === b.id ? C.bldgSel : C.bldgFill}
                 stroke={selected?.id === b.id ? C.bldgSelStroke : C.bldgStroke}
-                strokeWidth={1.3}
+                strokeWidth={1.2 / scale}
                 onPress={() => elegir(b)}
               />
             ))}
-
+  
             {/* puntitos de las puertas */}
             {PUERTAS.map(([x, y, rx, ry], i) => (
               <Ellipse key={`d${i}`} cx={x} cy={y} rx={rx} ry={ry} fill={C.door} pointerEvents="none" />
             ))}
-
+  
             {ruta && (
               <Path
                 d={rutaToPath(ruta.points)}
                 fill="none"
                 stroke={C.route}
-                strokeWidth={2.5}
-                strokeDasharray="6 5"
+                strokeWidth={3 / scale}
+                strokeDasharray={`${7 / scale} ${5 / scale}`}
                 strokeLinecap="round"
                 pointerEvents="none"
               />
             )}
-
+  
             {BUILDINGS.map((b) => (
               <Cartel C={C} key={`t-${b.id}`} x={centros[b.id].x} y={centros[b.id].y + fontSize * 0.35} size={fontSize}>
                 {b.label}
               </Cartel>
             ))}
-
+  
             {GATES.map((g) => (
-              <Circle key={g.id} cx={g.x} cy={g.y} r={7} fill={C.mapAccent} />
+              <Circle key={g.id} cx={g.x} cy={g.y} r={5 / scale} fill={C.mapAccent} />
             ))}
-
+  
             {/* nombres de las dos entradas */}
             <Cartel C={C} x={433.4} y={764 + gateSize * 0.7} size={gateSize} weight="800">
               {GATE_LABELS.mitre}
@@ -326,7 +258,7 @@ export default function CampusMap({ onEnterBuilding }: Props) {
             <Cartel C={C} x={corvTx} y={487} size={gateSize} weight="800" rotation={-90} origin={`${corvTx}, 487`}>
               {GATE_LABELS.corvalan}
             </Cartel>
-
+  
             {miPos && !lejos && (
               <>
                 <Circle cx={miPos.x} cy={miPos.y} r={radioPunto * 2.2} fill="#4f8ef7" opacity={0.25} pointerEvents="none" />
@@ -334,44 +266,113 @@ export default function CampusMap({ onEnterBuilding }: Props) {
               </>
             )}
           </Svg>
-        </ScrollView>
+      </MapaVista>
 
-        {/* zoom */}
-        <View style={s.zoomCtl}>
-          <Pressable style={s.zoomBtn} onPress={() => cambiarZoom(1.35)}>
-            <Text style={s.zoomTxt}>+</Text>
-          </Pressable>
-          <Pressable style={s.zoomBtn} onPress={() => cambiarZoom(1 / 1.35)}>
-            <Text style={s.zoomTxt}>−</Text>
-          </Pressable>
-        </View>
-      </View>
+      {/* arriba, flotando: buscador y "estás en" */}
+      <BarraSuperior value={query} onChange={buscar} placeholder="Buscar edificio o aula (ej: Aula 5)">
+        <FilaChips>
+          <Chip
+            texto={`Estás en: ${GATE_LABELS[origen]}`}
+            icono={<IconoUI nombre="ubicacion" size={14} />}
+            derecha={<IconoUI nombre={whereOpen ? 'arriba' : 'abajo'} size={12} color={C.dim} />}
+            onPress={() => setWhereOpen((o) => !o)}
+          />
+          {cerca && !lejos && (
+            <Chip
+              texto="Usar mi ubicación"
+              onPress={() => {
+                setOrigen(cerca.id);
+                limpiarRuta();
+              }}
+            />
+          )}
+        </FilaChips>
+        {whereOpen && (
+          <View style={s.whereList}>
+            {(Object.keys(GATE_LABELS) as PuertaCampus[]).map((id) => {
+              const activo = id === origen;
+              return (
+                <Pressable
+                  key={id}
+                  style={[s.whereOpt, activo && { backgroundColor: C.elevated }]}
+                  onPress={() => {
+                    setOrigen(id);
+                    setWhereOpen(false);
+                    limpiarRuta();
+                  }}
+                >
+                  <View style={s.dot} />
+                  <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.pillTypeText, fontWeight: '600' }]}>{GATE_LABELS[id]}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        )}
+        {!!textoGps && (
+          <View style={s.gpsChip}>
+            <Text style={s.gpsTxt}>{textoGps}</Text>
+          </View>
+        )}
+        {hayLista && (
+          <ScrollView style={s.resultados} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            {edificiosHallados.map((b) => (
+              <Pressable
+                key={'b' + b.id}
+                style={s.whereOpt}
+                onPress={() => {
+                  setListaAbierta(false);
+                  Keyboard.dismiss();
+                  elegir(b);
+                }}
+              >
+                <View style={s.dot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: C.text }}>{b.label}</Text>
+                  <Text style={{ fontSize: 11, color: C.dim }}>Edificio</Text>
+                </View>
+              </Pressable>
+            ))}
+            {espaciosHallados.map((r) => (
+              <Pressable
+                key={r.buildingId + r.floor + r.id}
+                style={s.whereOpt}
+                onPress={() => {
+                  setListaAbierta(false);
+                  Keyboard.dismiss();
+                  onEnterBuilding?.(r.buildingId, { floor: r.floor, id: r.id });
+                }}
+              >
+                <View style={s.dot} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: C.text }} numberOfLines={1}>{r.label}</Text>
+                  <Text style={{ fontSize: 11, color: C.dim }}>{r.edificio} · {r.floor}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
+        {sinResultado && (
+          <View style={s.gpsChip}>
+            <Text style={s.gpsTxt}>No encontramos ese edificio ni esa aula.</Text>
+          </View>
+        )}
+      </BarraSuperior>
 
-      {/* ficha */}
-      <View style={s.info}>
-        {selected ? (
-          <>
+      <BotonesZoom onMas={() => m.zoomPor(1.6)} onMenos={() => m.zoomPor(1 / 1.6)} desplaza={selected && !teclado ? subeBotones(progHoja, alturaHoja) : undefined} />
+
+      {/* abajo: ficha del edificio elegido, como la hoja de Google Maps */}
+      {selected && !teclado && (
+        <Hoja progreso={progHoja} key={selected.id} resumen={selected.label} onCerrar={() => { setSelected(null); limpiarRuta(); }} onLayoutAlto={setAlturaHoja}>
+          <ScrollView style={{ maxHeight: winH * 0.5 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
             {foto && <Image source={foto} style={[s.heroFoto, { marginBottom: 8 }]} resizeMode="cover" />}
             <View style={s.infoHead}>
               <View style={{ flex: 1 }}>
                 <Text style={s.infoTitle}>{selected.label}</Text>
                 <Text style={s.infoSub}>Campus UNM</Text>
               </View>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={s.pill}>
-                  {selected.accesos} acceso{selected.accesos !== 1 ? 's' : ''}
-                </Text>
-                <Pressable
-                  onPress={() => {
-                    setSelected(null);
-                    limpiarRuta();
-                  }}
-                  hitSlop={10}
-                  style={{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: C.elevated }}
-                >
-                  <Text style={{ color: C.text, fontSize: 14, fontWeight: '700' }}>✕</Text>
-                </Pressable>
-              </View>
+              <Text style={s.pill}>
+                {selected.accesos} acceso{selected.accesos !== 1 ? 's' : ''}
+              </Text>
             </View>
 
             {interior ? (
@@ -411,38 +412,24 @@ export default function CampusMap({ onEnterBuilding }: Props) {
                 ))}
               </View>
             )}
-          </>
-        ) : (
-          <View>
-            <Image source={FOTO_CAMPUS} style={s.heroFoto} resizeMode="cover" />
-            <Text style={[s.infoTitle, { marginTop: 12 }]}>Campus UNM</Text>
-            <Text style={s.infoSub}>Tocá un edificio en el mapa para ver su información.</Text>
-            <Text style={[s.pill, { marginTop: 6 }]}>{BUILDINGS.length} edificios</Text>
-          </View>
-        )}
+          </ScrollView>
+        </Hoja>
+      )}
       </View>
-    </ScrollView>
+    </View>
   );
 }
 
 const makeStyles = (C: Colores) =>
   StyleSheet.create({
-    screen: { flex: 1, backgroundColor: C.bg },
-    subtitle: { fontSize: 11, color: C.dim, marginHorizontal: 18, marginBottom: 10 },
-    search: { marginHorizontal: 18, marginBottom: 12, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8 },
-    searchInput: { flex: 1, fontSize: 14, color: C.text, padding: 0 },
-    whereBtn: { marginHorizontal: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 10 },
-    whereList: { marginHorizontal: 18, marginBottom: 10, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 8 },
+    raiz: { flex: 1, backgroundColor: C.bg },
+    pantalla: { flex: 1, backgroundColor: C.mapBg, overflow: 'hidden' },
+    whereList: { backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, borderRadius: 14, padding: 8, marginRight: 60, elevation: 8 },
     whereOpt: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 9 },
-    gpsRow: { marginHorizontal: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8 },
-    gpsTxt: { flex: 1, fontSize: 12, color: C.dim },
-    gpsBtn: { backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
-    gpsBtnTxt: { color: C.text, fontSize: 12, fontWeight: '700' },
+    resultados: { maxHeight: 280, backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, borderRadius: 14, padding: 6, marginRight: 60, elevation: 8 },
     dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
-    mapCard: { marginHorizontal: 18, marginBottom: 12, backgroundColor: C.mapBg, borderRadius: 22, borderWidth: 1, borderColor: C.mapBorder, overflow: 'hidden', paddingTop: 12 },
-    floorLabelRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, marginBottom: 6 },
-    floorLabel: { fontSize: 11.5, fontWeight: '600', color: C.floorLabel },
-    info: { marginHorizontal: 18, padding: 16, borderRadius: 18, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, gap: 6 },
+    gpsChip: { alignSelf: 'flex-start', backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 6, elevation: 3 },
+    gpsTxt: { fontSize: 11.5, color: C.dim },
     infoHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10, marginBottom: 4 },
     infoTitle: { fontSize: 17, fontWeight: '700', color: C.text },
     infoSub: { fontSize: 13, color: C.dim },
@@ -453,8 +440,5 @@ const makeStyles = (C: Colores) =>
     secondaryBtnText: { color: C.text, fontWeight: '700', fontSize: 14 },
     noteCard: { backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 10, marginTop: 6 },
     stepN: { width: 18, height: 18, borderRadius: 9, backgroundColor: C.elevated, borderWidth: 1, borderColor: C.border, alignItems: 'center', justifyContent: 'center', marginTop: 1 },
-    heroFoto: { width: '100%', height: 150, borderRadius: 14, backgroundColor: C.elevated },
-    zoomCtl: { position: 'absolute', right: 20, bottom: 20, gap: 8 },
-    zoomBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, alignItems: 'center', justifyContent: 'center', elevation: 3 },
-    zoomTxt: { fontSize: 22, color: C.text, lineHeight: 24 },
+    heroFoto: { width: '100%', height: 110, borderRadius: 14, backgroundColor: C.elevated },
   });

@@ -1,21 +1,20 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Image,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
-  useWindowDimensions,
+  useWindowDimensions
 } from 'react-native';
 import Svg, { Circle, G, Path, Text as SvgText } from 'react-native-svg';
 import { AMENITIES, Comodidades, EDIFICIOS, NOTES, Piso, SCHEDULE } from '../data/edificios';
 import { fotoDeEdificio } from '../data/fotosEdificios';
 import { TAM_ICONO, TipoIcono, centroVisual, tipoIcono } from '../data/iconos';
 import { cargarAulas } from '../lib/api';
+import { esOscuro, mezclar } from '../lib/colores';
 import {
   Ruta,
   Ubicacion,
@@ -29,9 +28,12 @@ import {
   rutaToPath,
   typeLabel,
 } from '../lib/interior';
+import { MapaVista, useMapaGestos } from '../lib/MapaZoom';
 import { Colores, useTema } from '../lib/tema';
 import HeaderMapa from './HeaderMapa';
 import IconoEspacio from './IconoEspacio';
+import IconoUI from './IconoUI';
+import { BarraSuperior, BotonesZoom, Chip as ChipMapa, FilaChips, Hoja, subeBotones, useTeclado } from './MapaUI';
 
 const fillDe = (C: Colores) => ({
   aula: { fill: C.aulaFill, stroke: C.aulaStroke, selFill: C.aulaSel, selStroke: C.aulaSelStroke },
@@ -46,7 +48,7 @@ function useEstilos() {
   return { C, s };
 }
 
-const LABEL_PX = 13; // tamaño de los nombres en pantalla, sin importar el zoom
+const LABEL_PX = 12; // tamaño de los nombres en pantalla, sin importar el zoom
 
 // Ajusta el viewBox al dibujo real (con un margen) para que no sobre espacio vacío
 function viewBoxAjustado(piso: Piso): string {
@@ -71,39 +73,58 @@ function viewBoxAjustado(piso: Piso): string {
   return `${x1 - PAD} ${y1 - PAD} ${x2 - x1 + PAD * 2} ${y2 - y1 + PAD * 2}`;
 }
 
-type Props = { buildingId: string; onBack: () => void };
+type Props = { buildingId: string; onBack: () => void; inicial?: { floor: string; id: string } };
 
-export default function BuildingInterior({ buildingId, onBack }: Props) {
+export default function BuildingInterior({ buildingId, onBack, inicial }: Props) {
   const { C, s } = useEstilos();
   const FILL = fillDe(C);
+  const oscuro = esOscuro(C.bg);
+  // colores del plano: verde más suave, pasillos claros, espacios "nulos" grises
+  const VERDE = oscuro ? mezclar(C.field, C.mapBg, 0.3) : mezclar(C.field, '#ffffff', 0.5);
+  const PASILLO = oscuro ? { fill: '#3a3f4d', stroke: '#4a5062' } : { fill: '#f3eee2', stroke: '#e0d8c4' };
+  const NULO = oscuro ? { fill: '#4b505c', stroke: '#5d6371' } : { fill: '#cfd2d9', stroke: '#b3b8c3' };
+
   const ed = EDIFICIOS[buildingId];
-  const { width: winW } = useWindowDimensions();
+  const { height: winH } = useWindowDimensions();
   const pisos = Object.keys(ed.floors);
 
   // foto del edificio (la misma que se ve en el mapa del campus)
   const foto = fotoDeEdificio(buildingId, ed.name) ?? fotoDeEdificio(buildingId.replace('edificio-', ''), ed.name);
 
-  const [floor, setFloor] = useState(pisos[0]);
+  // si venís de buscar un espacio en el campus, abre en su piso y lo deja elegido
+  const destino = inicial && ed.floors[inicial.floor]?.shapes.some((x) => x.id === inicial.id) ? inicial : null;
+  const destinoRef = useRef(destino);
+  const [floor, setFloor] = useState(destino?.floor ?? pisos[0]);
   const [mi, setMi] = useState<Ubicacion>(() => puntoInicial(ed));
-  const [selId, setSelId] = useState<string | null>(null);
+  const [selId, setSelId] = useState<string | null>(destino?.id ?? null);
   const [ruta, setRuta] = useState<Ruta | null>(null);
   const [whereOpen, setWhereOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(winW < 600 ? 2.4 : 1);
-  const [mapW, setMapW] = useState(Math.max(280, Math.min(winW, 900) - 60));
+  const [alturaHoja, setAlturaHoja] = useState(0);
+  const progHoja = useRef(new Animated.Value(1)).current; // 1 = ficha abierta, 0 = bajada
+  const zb = ed.zoomBase ?? 1; // edificios con espacios chicos arrancan con más zoom
+  const zInicial = 1.8 * zb; // zoom de arranque (antes era mucho más cerca)
 
-  const scrollRef = useRef<ScrollView>(null);
-  const pantallaRef = useRef<ScrollView>(null);
-  const scrollX = useRef(0);
+  // el mapa ocupa toda la pantalla: se mide el espacio disponible
+  const [caja, setCaja] = useState({ w: 360, h: 640 });
+    const teclado = useTeclado();
+  // el alto "de verdad" (sin teclado): así el plano no se recentra cuando se abre el teclado
+  const hEstable = useRef(caja.h);
+  if (!teclado) hEstable.current = caja.h;
+  const mapW = caja.w;
+  const viewH = caja.h;
 
   const piso = ed.floors[floor];
   const viewBox = viewBoxAjustado(piso);
   const [vx, vy, vw, vh] = viewBox.split(' ').map(Number);
+  const baseH = (mapW * vh) / vw;
+  const m = useMapaGestos(zInicial, { viewW: mapW, viewH, baseW: mapW, baseH, min: 1, max: 3 * zb });
+  const zoom = m.zoom;
   const svgW = mapW * zoom;
-  const svgH = (svgW * vh) / vw;
+  const svgH = baseH * zoom;
   const k = svgW / vw; // píxeles por unidad del plano
-  const fs = LABEL_PX / k; // tamaño de letra en unidades del plano
+  const fs = LABEL_PX / (svgW / vw); // mismo tamaño de letra en todos los edificios
 
   // íconos de baños, escaleras y ascensor: posición y tamaño de cada uno (se recalcula solo al cambiar de piso)
   const iconos = useMemo(
@@ -111,26 +132,29 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
       piso.shapes.flatMap((sh) => {
         const tipo = tipoIcono(sh.id);
         if (!tipo) return [];
-        const c = centroVisual(sh, buildingId);
+        // Histórico: el ícono va justo en el centro del espacio; el resto usa su ajuste de siempre
+        const c = ed.zoomBase != null
+          ? { x: sh.cx, y: sh.cy, r: Math.min(sh.w, sh.h) / 2 }
+          : centroVisual(sh, buildingId);
         const size = Math.min(TAM_ICONO[tipo], c.r * 2.4); // nunca más grande que el espacio
         return [{ id: sh.id, tipo: tipo as TipoIcono, x: c.x, y: c.y, size }];
       }),
     [piso, buildingId],
   );
 
-  // al cambiar de piso, centrar el plano
-  useEffect(() => {
-    const id = setTimeout(() => scrollRef.current?.scrollTo({ x: Math.max(0, (svgW - mapW) / 2), animated: false }), 30);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [floor, mapW]);
+  const forma = piso.shapes.find((x) => x.id === selId) ?? null;
+  const miPunto = pointById(ed, mi.floor, mi.pointId);
+  const puntoEnEstePiso = mi.floor === floor ? miPunto : null;
 
-  function cambiarZoom(factor: number) {
-    const nuevo = Math.max(1, Math.min(4.5, zoom * factor));
-    const fx = (scrollX.current + mapW / 2) / svgW;
-    setZoom(nuevo);
-    setTimeout(() => scrollRef.current?.scrollTo({ x: fx * mapW * nuevo - mapW / 2, animated: false }), 0);
-  }
+  // al abrir o cambiar de piso: acercar y centrar donde estás parado
+  useEffect(() => {
+    const obj = destinoRef.current && destinoRef.current.floor === floor ? piso.shapes.find((x) => x.id === destinoRef.current!.id) : null;
+    const p = obj ? { x: obj.cx, y: obj.cy } : mi.floor === floor ? miPunto : piso.points[0] ?? null; // en otro piso: arranca en una escalera
+    const px = p ? ((p.x - vx) / vw) * mapW : mapW / 2;
+    const py = p ? ((p.y - vy) / vh) * baseH : baseH / 2;
+    m.centrarEn(zInicial, px, py);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [floor, mapW, hEstable.current]);
 
   function showToast(msg: string) {
     setToast(msg);
@@ -138,6 +162,7 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
   }
 
   function elegirPiso(f: string) {
+    destinoRef.current = null;
     setFloor(f);
     setSelId(null);
     setRuta(null);
@@ -146,8 +171,6 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
   function elegirEspacio(id: string) {
     setSelId(id);
     setRuta(null);
-    // baja hasta la ficha del espacio
-    setTimeout(() => pantallaRef.current?.scrollToEnd({ animated: true }), 80);
   }
 
   function buscar(texto: string) {
@@ -161,212 +184,189 @@ export default function BuildingInterior({ buildingId, onBack }: Props) {
     elegirEspacio(r.forma.id);
   }
 
-  const forma = piso.shapes.find((s) => s.id === selId) ?? null;
-  const miPunto = pointById(ed, mi.floor, mi.pointId);
-  const puntoEnEstePiso = mi.floor === floor ? miPunto : null;
-
   function comoLlegar() {
     if (!forma) return;
     setRuta(calcularRuta(ed, mi, floor, forma, labelFor(forma.id) || forma.id));
-    // baja para ver los pasos de la ruta
-    setTimeout(() => pantallaRef.current?.scrollToEnd({ animated: true }), 80);
   }
 
   /* ---------------- UI ---------------- */
   return (
-    <ScrollView
-      ref={pantallaRef}
-      style={s.screen}
-      contentContainerStyle={{ paddingBottom: 40 }}
-      contentInsetAdjustmentBehavior="never"
-    >
+    <View style={s.raiz}>
       <HeaderMapa onBack={onBack} />
-      <Text style={s.subtitle}>{ed.name} · Planos reales</Text>
-
-      {/* buscador */}
-      <View style={s.search}>
-        <Text style={{ color: '#8ea0c2' }}>🔍</Text>
-        <TextInput
-          value={query}
-          onChangeText={buscar}
-          placeholder="Buscar aula (ej: Aula 13)"
-          placeholderTextColor={C.placeholder}
-          style={s.searchInput}
-        />
-      </View>
-
-      {/* pisos */}
-      <View style={s.tabs}>
-        {pisos.map((f) => (
-          <Pressable key={f} onPress={() => elegirPiso(f)} style={[s.tab, f === floor && s.tabActive]}>
-            <Text style={[s.tabText, f === floor && { color: C.onAccent }]}>{f}</Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {/* estás en */}
-      <Pressable style={s.whereBtn} onPress={() => setWhereOpen((o) => !o)}>
-        <Text style={{ color: C.dim, fontSize: 12.5, flex: 1 }}>
-          📍 Estás en: <Text style={{ color: C.text, fontWeight: '600' }}>{`${miPunto.label} · ${mi.floor}`}</Text>
-        </Text>
-        <Text style={{ color: C.dim }}>{whereOpen ? '▴' : '▾'}</Text>
-      </Pressable>
-      {whereOpen && (
-        <View style={s.whereList}>
-          {pisos.map((f) => {
-            const pts = ed.floors[f].points.filter((p) => p.selectable !== false);
-            if (!pts.length) return null;
+      <View style={s.pantalla} onLayout={(e) => setCaja({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}>
+      {/* el plano, a pantalla completa */}
+      <MapaVista m={m} viewW={mapW} viewH={viewH} baseW={mapW} baseH={baseH}>
+    <View style={{ width: svgW, height: svgH }}>
+      <Svg width={svgW} height={svgH} viewBox={viewBox}>
+        {/* espacios */}
+        <G>
+          {piso.shapes.map((sh) => {
+            const tipo = classify(sh.id);
+            const esVerde = sh.id.includes('-verde');
+            const esSendero = sh.id.includes('-sendero') || sh.id.includes('-camino');
+            const esContorno = sh.id.includes('-contorno');
+            const esPasillo = sh.id.includes('-pasillo');
+            const esNulo = sh.id.startsWith('nulo');
+            // Histórico, pisos de arriba: el contorno de la planta baja que no tiene nada es espacio sin uso
+            const sinUso = esContorno && ed.zoomBase != null && floor !== pisos[0];
+            const st = esVerde
+              ? { fill: VERDE, stroke: VERDE, selFill: VERDE, selStroke: VERDE }
+              : esSendero
+              ? { fill: C.paths, stroke: C.paths, selFill: C.paths, selStroke: C.paths }
+              : esPasillo
+              ? { fill: PASILLO.fill, stroke: PASILLO.stroke, selFill: PASILLO.fill, selStroke: PASILLO.stroke }
+              : esNulo || sinUso
+              ? { fill: NULO.fill, stroke: NULO.stroke, selFill: NULO.fill, selStroke: NULO.stroke }
+              : esContorno
+              ? { fill: C.bldgFill, stroke: C.bldgStroke, selFill: C.bldgFill, selStroke: C.bldgStroke }
+              : FILL[tipo];
+            const sel = sh.id === selId;
             return (
-              <View key={f}>
-                <Text style={s.whereHeader}>{f}</Text>
-                {pts.map((p) => {
-                  const activo = f === mi.floor && p.id === mi.pointId;
-                  return (
-                    <Pressable
-                      key={p.id}
-                      style={[s.whereOpt, activo && { backgroundColor: C.elevated }]}
-                      onPress={() => {
-                        setMi({ floor: f, pointId: p.id });
-                        setWhereOpen(false);
-                        elegirPiso(f);
-                      }}
-                    >
-                      <View style={s.dot} />
-                      <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.pillTypeText, fontWeight: '600' }]}>{p.label}</Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
+              <Path
+                key={sh.id}
+                d={sh.d}
+                fill={sel ? st.selFill : st.fill}
+                stroke={sel ? st.selStroke : st.stroke}
+                strokeWidth={esContorno ? 1.8 : tipo === 'muted' ? 0.6 : 1.2}
+                fillRule="evenodd"
+                pointerEvents={tipo === 'muted' ? 'none' : 'auto'}
+                onPress={tipo === 'muted' ? undefined : () => elegirEspacio(sh.id)}
+              />
             );
           })}
+        </G>
+
+        {/* ruta */}
+        {ruta &&
+          (ruta.legs ?? [{ floor, points: ruta.points }])
+            .filter((l) => l.floor === floor && l.points.length > 1) // solo el tramo de este piso
+            .map((l, i) => (
+              <Path
+                key={'ruta' + i}
+                d={rutaToPath(l.points)}
+                fill="none"
+                stroke={C.route}
+                strokeWidth={2.5}
+                strokeDasharray="6 5"
+                strokeLinecap="round"
+                pointerEvents="none"
+              />
+            ))}
+
+        {/* "estás acá" */}
+        {puntoEnEstePiso && (
+          <G pointerEvents="none">
+            <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={9} fill="#4f8ef7" />
+            <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={15} fill="none" stroke="#4f8ef7" strokeWidth={2} opacity={0.5} />
+          </G>
+        )}
+
+        {/* carteles (sin contorno blanco, igual que en los Daract) */}
+        <G pointerEvents="none">
+          {piso.shapes.map((sh) => {
+            if (!mostrarCartel(sh.id)) return null;
+            if (tipoIcono(sh.id)) return null; // baños, escaleras y ascensor se muestran con su ícono
+            const tipo = classify(sh.id);
+            const label = labelFor(sh.id)!;
+            // si el nombre no entra en el espacio, se muestra recién al acercar (así no se pisan)
+            if (label.length * fs * 0.6 > sh.w * 0.98) return null;
+            const conClase = !!SCHEDULE[sh.id];
+            const y = (conClase ? sh.cy - fs * 0.35 : sh.cy) + fs * 0.35; // +0.35 = centrado vertical
+            return (
+              <G key={'t' + sh.id}>
+                <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill={C.label}>
+                  {label}
+                </SvgText>
+                {(conClase || tipo === 'aula') && (
+                  <Circle cx={sh.cx} cy={y - fs * 0.35 + fs * 0.95} r={Math.max(3, fs * 0.2)} fill={conClase ? '#f5a35c' : '#4fd18a'} />
+                )}
+              </G>
+            );
+          })}
+        </G>
+      </Svg>
+
+      {/* íconos (PNG) encima del plano; no bloquean los toques */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        {iconos.map((ic) => (
+          <IconoEspacio key={ic.id} tipo={ic.tipo} x={ic.x} y={ic.y} size={ic.size} vbX={vx} vbY={vy} k={k} color={C.icon} />
+        ))}
+      </View>
+    </View>
+      </MapaVista>
+
+      {/* arriba, flotando: atrás + buscador, pisos y "estás en" */}
+      <BarraSuperior value={query} onChange={buscar} placeholder={`Buscar en ${ed.name} (ej: Aula 13)`}>
+        <FilaChips>
+          {pisos.map((f) => (
+            <ChipMapa key={f} texto={f} activo={f === floor} onPress={() => elegirPiso(f)} />
+          ))}
+        </FilaChips>
+        <FilaChips>
+          <ChipMapa
+            texto={`Estás en: ${miPunto.label} · ${mi.floor}`}
+            icono={<IconoUI nombre="ubicacion" size={14} />}
+            derecha={<IconoUI nombre={whereOpen ? 'arriba' : 'abajo'} size={12} color={C.dim} />}
+            onPress={() => setWhereOpen((o) => !o)}
+          />
+        </FilaChips>
+        {whereOpen && (
+          <ScrollView style={s.whereList} nestedScrollEnabled>
+            {pisos.map((f) => {
+              const pts = ed.floors[f].points.filter((p) => p.selectable !== false);
+              if (!pts.length) return null;
+              return (
+                <View key={f}>
+                  <Text style={s.whereHeader}>{f}</Text>
+                  {pts.map((p) => {
+                    const activo = f === mi.floor && p.id === mi.pointId;
+                    return (
+                      <Pressable
+                        key={p.id}
+                        style={[s.whereOpt, activo && { backgroundColor: C.elevated }]}
+                        onPress={() => {
+                          setMi({ floor: f, pointId: p.id });
+                          setWhereOpen(false);
+                          elegirPiso(f);
+                        }}
+                      >
+                        <View style={s.dot} />
+                        <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.pillTypeText, fontWeight: '600' }]}>{p.label}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              );
+            })}
+          </ScrollView>
+        )}
+      </BarraSuperior>
+
+      {toast && (
+        <View style={s.toast}>
+          <Text style={s.toastText}>{toast}</Text>
         </View>
       )}
 
-      {/* mapa */}
-      <View style={s.mapWrap} onLayout={(e) => setMapW(e.nativeEvent.layout.width - 24)}>
-        {toast && (
-          <View style={s.toast}>
-            <Text style={s.toastText}>{toast}</Text>
-          </View>
-        )}
-        <View style={s.floorLabelRow}>
-          <Text style={s.floorLabel}>{floor}</Text>
-          <Text style={s.floorLabel}>{piso.shapes.filter((x) => classify(x.id) !== 'muted').length} espacios</Text>
-        </View>
+      <BotonesZoom onMas={() => m.zoomPor(1.6)} onMenos={() => m.zoomPor(1 / 1.6)} desplaza={forma && !teclado ? subeBotones(progHoja, alturaHoja) : undefined} />
 
-        <ScrollView
-          ref={scrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          scrollEventThrottle={32}
-          onScroll={(e: NativeSyntheticEvent<NativeScrollEvent>) => (scrollX.current = e.nativeEvent.contentOffset.x)}
-          style={{ borderRadius: 14 }}
-        >
-          <View style={{ width: svgW, height: svgH }}>
-            <Svg width={svgW} height={svgH} viewBox={viewBox}>
-              {/* espacios */}
-              <G>
-                {piso.shapes.map((sh) => {
-                  const tipo = classify(sh.id);
-                  const st = FILL[tipo];
-                  const sel = sh.id === selId;
-                  return (
-                    <Path
-                      key={sh.id}
-                      d={sh.d}
-                      fill={sel ? st.selFill : st.fill}
-                      stroke={sel ? st.selStroke : st.stroke}
-                      strokeWidth={tipo === 'muted' ? 0.6 : 1.2}
-                      pointerEvents={tipo === 'muted' ? 'none' : 'auto'}
-                      onPress={tipo === 'muted' ? undefined : () => elegirEspacio(sh.id)}
-                    />
-                  );
-                })}
-              </G>
-
-              {/* ruta */}
-              {ruta && (
-                <Path
-                  d={rutaToPath(ruta.points)}
-                  fill="none"
-                  stroke={C.route}
-                  strokeWidth={2.5}
-                  strokeDasharray="6 5"
-                  strokeLinecap="round"
-                  pointerEvents="none"
-                />
-              )}
-
-              {/* "estás acá" */}
-              {puntoEnEstePiso && (
-                <G pointerEvents="none">
-                  <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={9} fill="#4f8ef7" />
-                  <Circle cx={puntoEnEstePiso.x} cy={puntoEnEstePiso.y} r={15} fill="none" stroke="#4f8ef7" strokeWidth={2} opacity={0.5} />
-                </G>
-              )}
-
-              {/* carteles (con halo blanco para que se lean sobre cualquier color) */}
-              <G pointerEvents="none">
-                {piso.shapes.map((sh) => {
-                  if (!mostrarCartel(sh.id)) return null;
-                  if (tipoIcono(sh.id)) return null; // baños, escaleras y ascensor se muestran con su ícono
-                  const tipo = classify(sh.id);
-                  const label = labelFor(sh.id)!;
-                  const conClase = !!SCHEDULE[sh.id];
-                  const y = (conClase ? sh.cy - fs * 0.35 : sh.cy) + fs * 0.35; // +0.35 = centrado vertical
-                  return (
-                    <G key={'t' + sh.id}>
-                      <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill="none" stroke={C.halo} strokeWidth={fs * 0.2} strokeLinejoin="round">
-                        {label}
-                      </SvgText>
-                      <SvgText x={sh.cx} y={y} fontSize={fs} fontWeight="700" textAnchor="middle" fill={C.label}>
-                        {label}
-                      </SvgText>
-                      {(conClase || tipo === 'aula') && (
-                        <Circle cx={sh.cx} cy={y - fs * 0.35 + fs * 0.95} r={Math.max(3, fs * 0.2)} fill={conClase ? '#f5a35c' : '#4fd18a'} />
-                      )}
-                    </G>
-                  );
-                })}
-              </G>
-            </Svg>
-
-            {/* íconos (PNG) encima del plano; no bloquean los toques */}
-            <View style={StyleSheet.absoluteFill} pointerEvents="none">
-              {iconos.map((ic) => (
-                <IconoEspacio key={ic.id} tipo={ic.tipo} x={ic.x} y={ic.y} size={ic.size} vbX={vx} vbY={vy} k={k} color={C.icon} />
-              ))}
-            </View>
-          </View>
-        </ScrollView>
-
-        {/* zoom */}
-        <View style={s.zoomCtl}>
-          <Pressable style={s.zoomBtn} onPress={() => cambiarZoom(1.35)}>
-            <Text style={s.zoomTxt}>+</Text>
-          </Pressable>
-          <Pressable style={s.zoomBtn} onPress={() => cambiarZoom(1 / 1.35)}>
-            <Text style={s.zoomTxt}>−</Text>
-          </Pressable>
-        </View>
+      {/* abajo: ficha del espacio elegido, como la hoja de Google Maps */}
+            {forma && !teclado && (
+        <Hoja progreso={progHoja} key={forma.id} resumen={labelFor(forma.id) || forma.id} onCerrar={() => { setSelId(null); setRuta(null); }} onLayoutAlto={setAlturaHoja}>
+          <ScrollView style={{ maxHeight: winH * 0.45 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            <FichaEspacio
+              nombreEdificio={ed.name}
+              foto={foto}
+              piso={floor}
+              id={forma.id}
+              ruta={ruta}
+              onComoLlegar={comoLlegar}
+            />
+          </ScrollView>
+        </Hoja>
+      )}
       </View>
-
-      {/* ficha */}
-      <View style={s.info}>
-        {!forma ? (
-          <Text style={s.infoEmpty}>Tocá un espacio en el mapa para ver su información.</Text>
-        ) : (
-          <FichaEspacio
-            nombreEdificio={ed.name}
-            foto={foto}
-            piso={floor}
-            id={forma.id}
-            ruta={ruta}
-            onComoLlegar={comoLlegar}
-          />
-        )}
-      </View>
-    </ScrollView>
+    </View>
   );
 }
 
@@ -496,16 +496,18 @@ const makeStyles = (C: Colores) => StyleSheet.create({
   tabActive: { backgroundColor: C.accent, borderColor: C.accent },
   tabText: { fontSize: 12.5, fontWeight: '600', color: C.dim },
   whereBtn: { marginHorizontal: 18, marginBottom: 10, flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 10 },
-  whereList: { marginHorizontal: 18, marginBottom: 10, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 12, padding: 8 },
+  whereList: { maxHeight: 260, backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, borderRadius: 14, padding: 8, marginRight: 60, elevation: 8 },
   whereHeader: { fontSize: 10.5, color: C.dim, paddingHorizontal: 9, paddingTop: 7, paddingBottom: 3, textTransform: 'uppercase', letterSpacing: 0.4 },
   whereOpt: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 9 },
   dot: { width: 7, height: 7, borderRadius: 4, backgroundColor: C.accent },
-  mapWrap: { marginHorizontal: 18, backgroundColor: C.mapBg, borderWidth: 1, borderColor: C.mapBorder, borderRadius: 22, padding: 12, paddingTop: 14 },
-  floorLabelRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 8 },
+  raiz: { flex: 1, backgroundColor: C.bg },
+  pantalla: { flex: 1, backgroundColor: C.mapBg, overflow: 'hidden' },
+  mapWrap: { marginHorizontal: 6, backgroundColor: C.mapBg, borderWidth: 1, borderColor: C.mapBorder, borderRadius: 22, overflow: 'hidden', paddingTop: 12 },
+  floorLabelRow: { flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: 14, marginBottom: 6 },
   floorLabel: { fontSize: 11.5, fontWeight: '600', color: C.floorLabel },
-  toast: { position: 'absolute', top: 8, alignSelf: 'center', zIndex: 5, backgroundColor: C.toastBg, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, elevation: 6 },
+  toast: { position: 'absolute', top: 150, alignSelf: 'center', zIndex: 5, backgroundColor: C.toastBg, paddingVertical: 8, paddingHorizontal: 14, borderRadius: 20, elevation: 6 },
   toastText: { fontSize: 12, fontWeight: '600', color: C.toastText },
-  zoomCtl: { position: 'absolute', right: 20, bottom: 20, gap: 8 },
+  zoomCtl: { position: 'absolute', right: 14, bottom: 14, gap: 8 },
   zoomBtn: { width: 42, height: 42, borderRadius: 21, backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, alignItems: 'center', justifyContent: 'center', elevation: 3 },
   zoomTxt: { fontSize: 22, color: C.text, lineHeight: 24 },
   info: { margin: 18, marginBottom: 0, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border, borderRadius: 18, padding: 16 },
