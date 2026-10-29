@@ -1,15 +1,13 @@
 import { useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import { useCarreras, useMateriaCarreras, useMisCarreras } from '../lib/carreras';
-import { useCatalogo } from '../lib/inscripciones';
+import { useCarreras, useMisCarreras, usePlan } from '../lib/carreras';
 import { Registro, useProgreso } from '../lib/progreso';
 import { Colores, useTema } from '../lib/tema';
 
 const AZUL = '#4f8ef7'; // color de "en curso"
 
-type Item = { nombre: string; anio: number; cuatri: number };
+type Item = { nombre: string; anio: number; cuatri: number; electiva: boolean };
 
 // Campo de la nota: se arma solo cuando la materia está aprobada
 function NotaInput({ inicial, onGuardar, s, C }: { inicial?: number; onGuardar: (t: string) => void; s: any; C: Colores }) {
@@ -43,7 +41,11 @@ function Fila({ item, reg, onToque, onNota, s, C }: { item: Item; reg?: Registro
         </View>
         <View style={{ flex: 1 }}>
           <Text style={[s.nombre, aprobada && s.tachado]}>{item.nombre}</Text>
-          {item.cuatri > 0 && <Text style={s.sub}>{`${item.cuatri}.º cuatrimestre`}</Text>}
+          {item.cuatri > 2 || item.electiva ? (
+  <Text style={s.sub}>Optativa</Text>
+) : item.cuatri > 0 ? (
+  <Text style={s.sub}>{`${item.cuatri}.º cuatrimestre`}</Text>
+) : null}
         </View>
         {cursando && <Text style={s.tagCursando}>En curso</Text>}
       </Pressable>
@@ -59,32 +61,17 @@ export default function PlanillaMaterias({ alCerrar }: { alCerrar: () => void })
 
   const { carreras } = useCarreras();
   const { ids, listo: carrerasListas } = useMisCarreras();
-  const mapa = useMateriaCarreras();
-  const catalogo = useCatalogo();
+ 
+
   const { datos, ciclar, ponerNota } = useProgreso();
 
   const [sel, setSel] = useState<number | null>(null);
   const activa = sel ?? ids[0] ?? null;
-
-  // año y cuatrimestre de cada materia, sacados de los horarios cargados
-  const info = useMemo(() => {
-    const m = new Map<string, { anio: number; cuatri: number }>();
-    for (const p of catalogo) {
-      for (const f of p.franjas as any[]) {
-        if (!f.materia) continue;
-        const prev = m.get(f.materia);
-        if (!prev || (!prev.anio && f.anio)) m.set(f.materia, { anio: Number(f.anio) || 0, cuatri: Number(f.cuatrimestre) || 0 });
-      }
-    }
-    return m;
-  }, [catalogo]);
-
-  const items: Item[] = useMemo(() => {
-    if (activa == null) return [];
-    return Object.keys(mapa)
-      .filter((n) => mapa[n].includes(activa))
-      .map((n) => ({ nombre: n, ...(info.get(n) ?? { anio: 0, cuatri: 0 }) }));
-  }, [mapa, activa, info]);
+  const plan = usePlan(activa);
+    const items: Item[] = useMemo(
+    () => (plan ?? []).map((m) => ({ nombre: m.nombre, anio: m.anio, cuatri: m.cuatri, electiva: m.electiva })),
+    [plan]
+  );
 
   const porAnio = useMemo(() => {
     const g = new Map<number, Item[]>();
@@ -92,7 +79,7 @@ export default function PlanillaMaterias({ alCerrar }: { alCerrar: () => void })
     const anios = [...g.keys()].sort((a, b) => (a === 0 ? 1 : b === 0 ? -1 : a - b));
     return anios.map((a) => ({
       anio: a,
-      materias: g.get(a)!.sort((x, y) => x.cuatri - y.cuatri || x.nombre.localeCompare(y.nombre, 'es')),
+      materias: g.get(a)!.sort((x, y) => (x.cuatri || 9) - (y.cuatri || 9) || x.nombre.localeCompare(y.nombre, 'es')),
     }));
   }, [items]);
 

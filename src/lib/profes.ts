@@ -112,8 +112,14 @@ export function estado(p: Profe, t: Momento): Estado {
     };
   }
   return {
-    ...base, k: 'off', cls: 'off', corto: 'Hoy no viene', titulo: 'Hoy no tiene clases',
-    detalle: 'No figura con clases en la grilla para hoy.', nota: '',
+        ...base, k: 'off', cls: 'off',
+    corto: (() => {
+      const d = ORDEN_SEMANA.filter((x) => p.franjas.some((s) => s.dias.includes(x))).map((x) => DIAS_CORTO[x]);
+      return d.length ? `Hoy no viene · viene ${d.join(', ')}` : 'Hoy no viene';
+       })(),
+    titulo: 'Hoy no tiene clases',
+    detalle: 'No figura con clases en la grilla para hoy.',
+    nota: '',
   };
 }
 

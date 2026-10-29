@@ -92,9 +92,9 @@ export function useMisCarreras() {
           body: JSON.stringify({ carreras: nuevos }),
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        AsyncStorage.setItem(clave, JSON.stringify(nuevos)).catch(() => {});
+               AsyncStorage.setItem(clave, JSON.stringify(nuevos)).catch(() => {});
+        oyentes.forEach((f) => f(nuevos));
       } catch {
-                oyentes.forEach((f) => f(nuevos));
         setIds(antes);
         Alert.alert('Carreras', 'No se pudo guardar. Revisá tu conexión.');
         throw new Error('No se pudieron guardar las carreras.');
@@ -131,4 +131,31 @@ export function materiaDeMisCarreras(materia: string, mapa: Record<string, numbe
   const de = mapa[materia];
   if (!de || de.length === 0) return true;
   return de.some((c) => mis.includes(c));
+}
+export type MateriaPlan = { nombre: string; anio: number; cuatri: number; electiva: boolean };
+
+/** Plan de estudios de una carrera (de la base). null = cargando */
+export function usePlan(carreraId: number | null) {
+  const [plan, setPlan] = useState<MateriaPlan[] | null>(null);
+
+  useEffect(() => {
+    if (carreraId == null) {
+      setPlan(null);
+      return;
+    }
+    let vivo = true;
+    setPlan(null);
+    pedir<MateriaPlan[]>(`/carreras/${carreraId}/plan`)
+      .then((r) => {
+        if (vivo) setPlan(Array.isArray(r) ? r : []);
+      })
+      .catch(() => {
+        if (vivo) setPlan([]);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [carreraId]);
+
+  return plan;
 }

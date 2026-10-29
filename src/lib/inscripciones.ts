@@ -27,7 +27,7 @@ export function periodoActual(fecha: Date = new Date()): Periodo | null {
 }
 
 // Una franja sin cuatrimestre (0 o vacío) se muestra siempre; si lo trae, solo en ese cuatri.
-const esDelPeriodo = (f: Franja, p: Periodo) => !f.cuatrimestre || f.cuatrimestre === p.cuatri;
+const esDelPeriodo = (f: Franja, p: Periodo) => !f.cuatrimestre || f.cuatrimestre > 2 || f.cuatrimestre === p.cuatri;
 
 /** Una materia + comisión, con todos sus horarios y docentes */
 export type Cursada = {

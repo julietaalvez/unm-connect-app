@@ -4,10 +4,13 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 import { FUENTE, PROFES } from '../data/profes';
 import { cargarProfesores } from '../lib/api';
+import { materiaDeMisCarreras, useMateriaCarreras, useMisCarreras } from '../lib/carreras';
+import { periodoActual } from '../lib/inscripciones';
 import {
   DIAS, DIAS_CORTO, Estado, Franja, GRUPOS, Momento, ORDEN_SEMANA, Profe,
   ahoraReal, estado, fmtMin, hm, iniciales, lugarTxt, norm, toMin,
 } from '../lib/profes';
+import { useProgreso } from '../lib/progreso';
 import { Colores, useTema } from '../lib/tema';
 import { Wf, useWf } from '../lib/wf';
 import HeaderMapa from './HeaderMapa';
@@ -39,6 +42,27 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
   const [sel, setSel] = useState<Profe | null>(null);
   const [, setTic] = useState(0);
   const [profes, setProfes] = useState<Profe[]>(PROFES);
+    const { ids: misCarreras } = useMisCarreras();
+  const mapaCarreras = useMateriaCarreras();
+  const cuatri = periodoActual()?.cuatri;
+    const { datos: progreso } = useProgreso();
+
+  // Solo franjas del cuatrimestre actual y de mis carreras; el profe sin franjas se oculta
+  const visibles = useMemo(
+    () =>
+      profes
+        .map((p) => {
+          const franjas = p.franjas.filter(
+            (f) =>
+              (!f.cuatrimestre || f.cuatrimestre > 2 || !cuatri || f.cuatrimestre === cuatri) &&
+                           materiaDeMisCarreras(f.materia, mapaCarreras, misCarreras) &&
+              progreso[f.materia]?.estado !== 'aprobada'
+          );
+          return { ...p, franjas, materias4: [...new Set(franjas.map((f) => f.materia))].slice(0, 4) };
+        })
+        .filter((p) => p.franjas.length > 0),
+        [profes, cuatri, mapaCarreras, misCarreras, progreso]
+  );
 
      useEffect(() => {
        cargarProfesores().then((r) => setProfes(r.datos));
@@ -52,7 +76,7 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
 
   const t = sim ?? ahoraReal();
 
-  const todos = useMemo(() => profes.map((p) => ({ p, e: estado(p, t) })), [profes, t.day, t.min]);
+ const todos = useMemo(() => visibles.map((p) => ({ p, e: estado(p, t) })), [visibles, t.day, t.min]);
   const q = norm(query.trim());
   const buscados = todos.filter(
     (x) => !q || norm(x.p.nombre).includes(q) || x.p.franjas.some((f) => norm(f.materia).includes(q))
