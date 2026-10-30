@@ -9,6 +9,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   AlumnoNota,
   Carrera,
@@ -36,6 +37,7 @@ const etiquetaEstado = (e: Estado) => ESTADOS.find((x) => x.valor === e)?.label 
    Pantalla principal: lista → nueva / detalle
    ============================================================ */
 export default function EvaluacionesDocente({ usuarioId, onVolver }: Props) {
+  const insets = useSafeAreaInsets();
   const [vista, setVista] = useState<Vista>({ t: 'lista' });
   const [evals, setEvals] = useState<Evaluacion[]>([]);
   const [carreras, setCarreras] = useState<Carrera[]>([]);
@@ -101,7 +103,7 @@ export default function EvaluacionesDocente({ usuarioId, onVolver }: Props) {
 
   return (
     <View style={s.raiz}>
-      <ScrollView contentContainerStyle={s.cont}>
+      <ScrollView contentContainerStyle={[s.cont, { paddingBottom: 60 + insets.bottom }]}>
         {onVolver && (
           <TouchableOpacity onPress={onVolver}>
             <Text style={s.volver}>‹ Volver</Text>
@@ -219,6 +221,7 @@ function NuevaEvaluacion({
   onVolver: () => void;
   onCreada: (id: number) => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [nombre, setNombre] = useState('');
   const [carreraId, setCarreraId] = useState<number | null>(carreras.length === 1 ? carreras[0].id : null);
   const [estado, setEstado] = useState<Estado>('borrador');
@@ -240,7 +243,7 @@ function NuevaEvaluacion({
   };
 
   return (
-    <ScrollView contentContainerStyle={s.cont} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[s.cont, { paddingBottom: 60 + insets.bottom }]} keyboardShouldPersistTaps="handled">
       <TouchableOpacity onPress={onVolver}>
         <Text style={s.volver}>‹ Volver</Text>
       </TouchableOpacity>
@@ -288,6 +291,7 @@ function Detalle({
   carrera: string;
   onVolver: () => void;
 }) {
+  const insets = useSafeAreaInsets();
   const [nombre, setNombre] = useState(ev.nombre);
   const [estado, setEstado] = useState<Estado>(ev.estado);
   const [fecha, setFecha] = useState(fechaARInput(ev.publicar_en));
@@ -377,7 +381,7 @@ function Detalle({
   };
 
   return (
-    <ScrollView contentContainerStyle={s.cont} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[s.cont, { paddingBottom: 60 + insets.bottom }]} keyboardShouldPersistTaps="handled">
       <TouchableOpacity onPress={onVolver}>
         <Text style={s.volver}>‹ Volver</Text>
       </TouchableOpacity>
@@ -399,7 +403,7 @@ function Detalle({
 
       <Text style={[s.label, { marginTop: 28 }]}>Notas</Text>
       <Text style={s.ayuda}>
-        Escribí la nota (por ejemplo 8, Ausente o Abandono) y salí del campo para guardarla. Si lo dejás vacío, se borra.
+        Escribí la nota (por ejemplo 8, Ausente o Abandono). Se guarda sola unos segundos después de escribir. Si la dejás vacía, se borra.
       </Text>
 
       <TextInput
@@ -430,6 +434,12 @@ function Detalle({
   );
 }
 
+/* ============================================================
+   Una fila de alumno: la nota se guarda sola
+   - 0,8 s después de dejar de escribir
+   - al salir del campo o apretar "Listo"
+   - al cerrar la pantalla, si quedó algo sin guardar
+   ============================================================ */
 function FilaAlumno({
   alumno,
   onGuardar,
@@ -438,34 +448,68 @@ function FilaAlumno({
   onGuardar: (id: number, valor: string) => Promise<void>;
 }) {
   const [valor, setValor] = useState(alumno.nota ?? '');
-  const guardada = useRef(alumno.nota ?? '');
-  const [estado, setEstado] = useState<'' | 'guardando' | 'ok'>('');
+  const [estado, setEstado] = useState<'' | 'guardando' | 'ok' | 'error'>('');
+  const guardada = useRef(alumno.nota ?? ''); // lo último que confirmó el servidor
+  const ultimo = useRef(alumno.nota ?? ''); // lo último que se escribió
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const alSalir = async () => {
-    const nuevo = valor.trim();
+  const guardar = async (texto: string) => {
+    const nuevo = texto.trim();
     if (nuevo === guardada.current) return;
     setEstado('guardando');
     try {
       await onGuardar(alumno.id, nuevo);
       guardada.current = nuevo;
-      setValor(nuevo);
       setEstado('ok');
-      setTimeout(() => setEstado(''), 1500);
+      setTimeout(() => setEstado((e) => (e === 'ok' ? '' : e)), 1500);
     } catch (e: any) {
-      setValor(guardada.current);
-      setEstado('');
+      setEstado('error');
       Alert.alert('No se pudo guardar', e.message);
     }
   };
 
+  const alCambiar = (texto: string) => {
+    setValor(texto);
+    ultimo.current = texto;
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(() => {
+      timer.current = null;
+      guardar(ultimo.current);
+    }, 800);
+  };
+
+  const alSalir = () => {
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    guardar(ultimo.current);
+  };
+
+  // si se cierra la pantalla con una nota recién escrita, se guarda igual
+  useEffect(
+    () => () => {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+        const nuevo = ultimo.current.trim();
+        if (nuevo !== guardada.current) onGuardar(alumno.id, nuevo).catch(() => {});
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
   return (
     <View style={s.filaAlumno}>
       <Text style={s.nombreAlumno} numberOfLines={2}>{alumno.nombre}</Text>
-      <Text style={s.estadoFila}>{estado === 'guardando' ? '…' : estado === 'ok' ? '✓' : ''}</Text>
+      <Text style={[s.estadoFila, estado === 'error' && s.estadoError]}>
+        {estado === 'guardando' ? '…' : estado === 'ok' ? '✓' : estado === 'error' ? '!' : ''}
+      </Text>
       <TextInput
         style={s.inputNota}
         value={valor}
-        onChangeText={setValor}
+        onChangeText={alCambiar}
         onBlur={alSalir}
         onSubmitEditing={alSalir}
         placeholder="Nota"
@@ -511,6 +555,7 @@ const s = StyleSheet.create({
   },
   nombreAlumno: { flex: 1, fontSize: 15, color: '#111' },
   estadoFila: { width: 16, textAlign: 'center', color: '#1b6b2f', fontWeight: '700' },
+  estadoError: { color: '#b00020' },
   inputNota: {
     width: 110, borderWidth: 1, borderColor: '#ccc', borderRadius: 8,
     paddingVertical: 8, paddingHorizontal: 10, fontSize: 15, color: '#111', textAlign: 'center',
