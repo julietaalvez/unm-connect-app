@@ -237,7 +237,7 @@ export default function InicioProfesor() {
           <View style={ancho ? s.colDer : undefined}>
             <Text style={[s.quickTitle, ancho && { marginTop: 0 }]}>Accesos rápidos</Text>
             <View style={[s.quick, { flexWrap: 'wrap', rowGap: 12 }, ancho && { justifyContent: 'flex-start' }]}>
-              <Pressable style={s.qbtn} onPress={() => router.navigate('/agenda')}>
+              <Pressable style={s.qbtn} onPress={() => setVerNotifs(true)}>
                 <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
                 <Text style={s.qTxt}>Novedades</Text>
               </Pressable>
@@ -253,7 +253,8 @@ export default function InicioProfesor() {
                   }
                   setVerAvisar(true);
                 }}>
-                <Image source={IC.campana} style={s.qIc} resizeMode="contain" />
+                {/* CAMBIO: icono teñido con el azul oscuro del tema */}
+                <Image source={IC.campana} style={s.qIcNavy} resizeMode="contain" />
                 <Text style={s.qTxt}>Avisar a mis alumnos</Text>
               </Pressable>
               <Pressable
@@ -268,13 +269,15 @@ export default function InicioProfesor() {
                   }
                   setVerNotas(true);
                 }}>
-                <Image source={IC.calendario} style={s.qIc} resizeMode="contain" />
+                {/* CAMBIO: icono teñido con el azul oscuro del tema */}
+                <Image source={IC.calendario} style={s.qIcNavy} resizeMode="contain" />
                 <Text style={s.qTxt}>Evaluaciones y notas</Text>
               </Pressable>
               <Pressable
                 style={s.qbtn}
                 onPress={() => Alert.alert('Registrar presentes', 'Próximamente')}>
-                <Image source={IC.clase} style={s.qIc} resizeMode="contain" />
+                {/* CAMBIO: icono teñido con el azul oscuro del tema */}
+                <Image source={IC.clase} style={s.qIcNavy} resizeMode="contain" />
                 <Text style={s.qTxt}>Registrar presentes</Text>
               </Pressable>
             </View>

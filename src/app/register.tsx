@@ -2,6 +2,7 @@ import { useAppTheme } from '@/context/theme-context';
 import { useCarreras } from '@/lib/carreras';
 import { useState } from 'react';
 import {
+  Image,
   Modal,
   Pressable,
   ScrollView,
@@ -10,6 +11,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import BotonTema from '../components/BotonTema'; // CAMBIO
 
 const API_URL = 'https://unm-backend-production.up.railway.app';
 
@@ -111,163 +113,190 @@ export default function RegisterScreen({
   };
 
   return (
-    <ScrollView
-      style={{ backgroundColor: colors.background }}
-      contentContainerStyle={styles.container}
-      keyboardShouldPersistTaps="handled">
+    // CAMBIO: un contenedor general para poder fijar el botón de tema arriba a la derecha
+    <View style={[styles.pantalla, { backgroundColor: colors.background }]}>
+      <ScrollView
+        style={{ backgroundColor: colors.background }}
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled">
 
-      <Text style={[styles.title, { color: colors.text }]}>Crear cuenta</Text>
-
-      <View style={[styles.selector, { backgroundColor: colors.card }]}>
-        {(['alumno', 'profesor'] as Rol[]).map((r) => {
-          const on = rol === r;
-          return (
-            <Pressable
-              key={r}
-              onPress={() => cambiarRol(r)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: on }}
-              style={[styles.opcion, { backgroundColor: on ? colors.navy : 'transparent' }]}>
-              <Text style={[styles.opcionTxt, { color: on ? colors.onNavy : colors.text }]}>
-                {r === 'alumno' ? 'Soy alumno' : 'Soy profesor'}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      <TextInput
-        style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
-        placeholder="Nombre y apellido"
-        placeholderTextColor={colors.placeholder}
-        value={nombre}
-        onChangeText={setNombre}
-      />
-      <TextInput
-        style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
-        placeholder="Email"
-        placeholderTextColor={colors.placeholder}
-        autoCapitalize="none"
-        keyboardType="email-address"
-        value={email}
-        onChangeText={setEmail}
-      />
-      {rol === 'alumno' && (
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
-          placeholder="DNI (sin puntos)"
-          placeholderTextColor={colors.placeholder}
-          keyboardType="number-pad"
-          maxLength={8}
-          value={dni}
-          onChangeText={(t) => setDni(t.replace(/\D/g, ''))}
+        {/* CAMBIO: el mismo logo que en el inicio de sesión */}
+        <Image
+          source={require('@/assets/images/logo.png')}
+          style={styles.logo}
+          resizeMode="contain"
         />
-      )}
-      <TextInput
-        style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
-        placeholder="Contraseña"
-        placeholderTextColor={colors.placeholder}
-        secureTextEntry
-        value={contrasena}
-        onChangeText={setContrasena}
-      />
-      <TextInput
-        style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
-        placeholder="Confirmar contraseña"
-        placeholderTextColor={colors.placeholder}
-        secureTextEntry
-        value={confirmar}
-        onChangeText={setConfirmar}
-      />
 
-      <Pressable
-        onPress={() => setAbierto(true)}
-        accessibilityRole="button"
-        style={[styles.input, styles.selectorCarrera, { backgroundColor: colors.card }]}>
-        <Text
-          numberOfLines={2}
-          style={{ flex: 1, fontSize: 16, color: resumen ? colors.text : colors.placeholder }}>
-          {resumen || textoVacio}
-        </Text>
-        <Text style={{ color: colors.placeholder, fontSize: 14, marginLeft: 8 }}>▾</Text>
-      </Pressable>
+        <Text style={[styles.title, { color: colors.text }]}>Crear cuenta</Text>
 
-      <Modal
-        visible={abierto}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setAbierto(false)}>
-        <Pressable style={styles.fondo} onPress={() => setAbierto(false)} />
-        <View style={[styles.hoja, { backgroundColor: colors.background }]}>
-          <Text style={[styles.hojaTitulo, { color: colors.text }]}>
-            {rol === 'alumno' ? '¿Qué carrera cursás?' : '¿En qué carrera(s) dictás?'}
-          </Text>
-          <Text style={{ color: colors.placeholder, fontSize: 12.5, marginBottom: 8 }}>
-            Podés elegir más de una
-          </Text>
-
-          <ScrollView style={{ flexGrow: 0 }}>
-            {carreras.map((c) => {
-              const on = elegidas.includes(c.id);
-              return (
-                <Pressable
-                  key={c.id}
-                  onPress={() => alternarCarrera(c.id)}
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: on }}
-                  style={styles.fila}>
-                  <View
-                    style={[
-                      styles.casilla,
-                      { borderColor: colors.navy, backgroundColor: on ? colors.navy : 'transparent' },
-                    ]}>
-                    {on && <Text style={{ color: colors.onNavy, fontSize: 13 }}>✓</Text>}
-                  </View>
-                  <Text style={{ color: colors.text, fontSize: 15, flex: 1 }}>{c.nombre}</Text>
-                </Pressable>
-              );
-            })}
-            {carreras.length === 0 && (
-              <Pressable onPress={recargar}>
-                <Text style={{ color: colors.placeholder, fontSize: 13, paddingVertical: 12 }}>
-                  {errCarreras
-                    ? 'No se pudieron cargar las carreras. Tocá para reintentar.'
-                    : 'Cargando carreras…'}
+        <View style={[styles.selector, { backgroundColor: colors.card }]}>
+          {(['alumno', 'profesor'] as Rol[]).map((r) => {
+            const on = rol === r;
+            return (
+              <Pressable
+                key={r}
+                onPress={() => cambiarRol(r)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                style={[styles.opcion, { backgroundColor: on ? colors.navy : 'transparent' }]}>
+                <Text style={[styles.opcionTxt, { color: on ? colors.onNavy : colors.text }]}>
+                  {r === 'alumno' ? 'Soy alumno' : 'Soy profesor'}
                 </Text>
               </Pressable>
-            )}
-          </ScrollView>
-
-          <Pressable
-            style={[styles.button, { backgroundColor: colors.navy, marginTop: 14 }]}
-            onPress={() => setAbierto(false)}>
-            <Text style={[styles.buttonText, { color: colors.onNavy }]}>Listo</Text>
-          </Pressable>
+            );
+          })}
         </View>
-      </Modal>
 
-      {!!error && <Text style={styles.error}>{error}</Text>}
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+          placeholder="Nombre y apellido"
+          placeholderTextColor={colors.placeholder}
+          value={nombre}
+          onChangeText={setNombre}
+        />
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+          placeholder="Email"
+          placeholderTextColor={colors.placeholder}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          value={email}
+          onChangeText={setEmail}
+        />
+        {rol === 'alumno' && (
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+            placeholder="DNI (sin puntos)"
+            placeholderTextColor={colors.placeholder}
+            keyboardType="number-pad"
+            maxLength={8}
+            value={dni}
+            onChangeText={(t) => setDni(t.replace(/\D/g, ''))}
+          />
+        )}
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+          placeholder="Contraseña"
+          placeholderTextColor={colors.placeholder}
+          secureTextEntry
+          value={contrasena}
+          onChangeText={setContrasena}
+        />
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+          placeholder="Confirmar contraseña"
+          placeholderTextColor={colors.placeholder}
+          secureTextEntry
+          value={confirmar}
+          onChangeText={setConfirmar}
+        />
 
-      <Pressable
-        style={[styles.button, { backgroundColor: colors.navy }]}
-        onPress={handleRegister}
-        disabled={cargando}>
-        <Text style={[styles.buttonText, { color: colors.onNavy }]}>
-          {cargando ? 'Creando cuenta...' : 'Crear cuenta'}
-        </Text>
-      </Pressable>
+        <Pressable
+          onPress={() => setAbierto(true)}
+          accessibilityRole="button"
+          style={[styles.input, styles.selectorCarrera, { backgroundColor: colors.card }]}>
+          <Text
+            numberOfLines={2}
+            style={{ flex: 1, fontSize: 16, color: resumen ? colors.text : colors.placeholder }}>
+            {resumen || textoVacio}
+          </Text>
+          <Text style={{ color: colors.placeholder, fontSize: 14, marginLeft: 8 }}>▾</Text>
+        </Pressable>
 
-      <Pressable onPress={onGoToLogin}>
-        <Text style={[styles.link, { color: colors.text }]}>
-          Ya tengo cuenta, iniciar sesión
-        </Text>
-      </Pressable>
-    </ScrollView>
+        <Modal
+          visible={abierto}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setAbierto(false)}>
+          <Pressable style={styles.fondo} onPress={() => setAbierto(false)} />
+          <View style={[styles.hoja, { backgroundColor: colors.background }]}>
+            <Text style={[styles.hojaTitulo, { color: colors.text }]}>
+              {rol === 'alumno' ? '¿Qué carrera cursás?' : '¿En qué carrera(s) dictás?'}
+            </Text>
+            <Text style={{ color: colors.placeholder, fontSize: 12.5, marginBottom: 8 }}>
+              Podés elegir más de una
+            </Text>
+
+            <ScrollView style={{ flexGrow: 0 }}>
+              {carreras.map((c) => {
+                const on = elegidas.includes(c.id);
+                return (
+                  <Pressable
+                    key={c.id}
+                    onPress={() => alternarCarrera(c.id)}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: on }}
+                    style={styles.fila}>
+                    <View
+                      style={[
+                        styles.casilla,
+                        { borderColor: colors.navy, backgroundColor: on ? colors.navy : 'transparent' },
+                      ]}>
+                      {on && <Text style={{ color: colors.onNavy, fontSize: 13 }}>✓</Text>}
+                    </View>
+                    <Text style={{ color: colors.text, fontSize: 15, flex: 1 }}>{c.nombre}</Text>
+                  </Pressable>
+                );
+              })}
+              {carreras.length === 0 && (
+                <Pressable onPress={recargar}>
+                  <Text style={{ color: colors.placeholder, fontSize: 13, paddingVertical: 12 }}>
+                    {errCarreras
+                      ? 'No se pudieron cargar las carreras. Tocá para reintentar.'
+                      : 'Cargando carreras…'}
+                  </Text>
+                </Pressable>
+              )}
+            </ScrollView>
+
+            <Pressable
+              style={[styles.button, { backgroundColor: colors.navy, marginTop: 14 }]}
+              onPress={() => setAbierto(false)}>
+              <Text style={[styles.buttonText, { color: colors.onNavy }]}>Listo</Text>
+            </Pressable>
+          </View>
+        </Modal>
+
+        {!!error && <Text style={styles.error}>{error}</Text>}
+
+        <Pressable
+          style={[styles.button, { backgroundColor: colors.navy }]}
+          onPress={handleRegister}
+          disabled={cargando}>
+          <Text style={[styles.buttonText, { color: colors.onNavy }]}>
+            {cargando ? 'Creando cuenta...' : 'Crear cuenta'}
+          </Text>
+        </Pressable>
+
+        <Pressable onPress={onGoToLogin}>
+          <Text style={[styles.link, { color: colors.text }]}>
+            Ya tengo cuenta, iniciar sesión
+          </Text>
+        </Pressable>
+      </ScrollView>
+
+      {/* CAMBIO: el mismo botón de modo claro/oscuro que en el inicio de sesión (va después para quedar encima) */}
+      <BotonTema style={styles.themeBtn} />
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 26, paddingVertical: 40 },
+  pantalla: { flex: 1 }, // CAMBIO
+  container: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 26, paddingTop: 60, paddingBottom: 40 }, // CAMBIO: más aire arriba por el botón
+  // CAMBIO
+  themeBtn: {
+    position: 'absolute',
+    top: 50,
+    right: 20,
+  },
+  // CAMBIO: un poco más chico que en el login para que el formulario largo entre mejor
+  logo: {
+    width: 110,
+    height: 110,
+    alignSelf: 'center',
+    marginBottom: 16,
+  },
   title: { fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 20 },
   selector: { flexDirection: 'row', borderRadius: 999, padding: 4, marginBottom: 20 },
   opcion: { flex: 1, borderRadius: 999, paddingVertical: 11, alignItems: 'center' },

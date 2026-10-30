@@ -222,7 +222,7 @@ export default function InicioAlumno() {
           <View style={ancho ? s.colDer : undefined}>
             <Text style={[s.quickTitle, ancho && { marginTop: 0 }]}>Accesos rápidos</Text>
             <View style={[s.quick, { flexWrap: 'wrap', rowGap: 12 }, ancho && { justifyContent: 'flex-start' }]}>
-              <Pressable style={s.qbtn} onPress={() => router.navigate('/agenda')}>
+              <Pressable style={s.qbtn} onPress={() => setVerNotifs(true)}>
                 <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
                 <Text style={s.qTxt}>Novedades</Text>
               </Pressable>
@@ -240,7 +240,8 @@ export default function InicioAlumno() {
                   setVerNotas(true);
                 }}
               >
-                <Image source={IC.calendario} style={s.qIc} resizeMode="contain" />
+                {/* CAMBIO: icono teñido con el azul oscuro del tema */}
+                <Image source={IC.calendario} style={s.qIcNavy} resizeMode="contain" />
                 <Text style={s.qTxt}>Mis notas</Text>
               </Pressable>
             </View>
@@ -339,6 +340,8 @@ export const makeStyles = (W: Wf) =>
       shadowColor: '#1a3399', shadowOpacity: 0.35, shadowRadius: 6, shadowOffset: { width: 0, height: 4 }, elevation: 3,
     },
     qIc: { width: 34, height: 34 },
+    // CAMBIO: igual que qIc, pero teñido con el azul oscuro del tema (para los iconos que se veían claros)
+    qIcNavy: { width: 34, height: 34, tintColor: W.navy },
     qTxt: { fontFamily: F.bold, fontSize: 10.5, color: W.ink, textAlign: 'center' },
 
     bloque: { flexDirection: 'row', alignItems: 'center', gap: 12, marginHorizontal: 16, marginBottom: 10, padding: 14, borderRadius: 18, backgroundColor: W.card },

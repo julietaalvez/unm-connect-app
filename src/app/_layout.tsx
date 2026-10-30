@@ -8,15 +8,20 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
 import DniScreen from '../components/dni';
+import ElegirMaterias from '../components/ElegirMaterias';
 import { registrarCierre, usuarioActual } from '../lib/sesion';
 import LoginScreen from './login';
 import RegisterScreen from './register';
 
 SplashScreen.preventAutoHideAsync();
 
+type Vista = 'login' | 'registro' | 'dni' | 'materias' | 'app';
+
 function Layout() {
   const { theme } = useAppTheme();
-  const [vista, setVista] = useState<'login' | 'registro' | 'dni' | 'app'>('login');
+  const [vista, setVista] = useState<Vista>('login');
+  // Se marca al crear una cuenta; el próximo alumno que inicie sesión pasa por "¿Qué materias cursás?"
+  const [recienRegistrado, setRecienRegistrado] = useState(false);
 
   // Al cerrar sesión desde Perfil (o desde la pantalla del DNI), vuelve al login
   useEffect(() => {
@@ -24,10 +29,30 @@ function Layout() {
     return () => registrarCierre(null);
   }, []);
 
+  // Después del DNI (o si no hace falta): un alumno recién registrado elige sus materias; el resto entra a la app
+  const seguirDespuesDelDni = () => {
+    if (recienRegistrado) {
+      setRecienRegistrado(false);
+      setVista('materias');
+    } else {
+      setVista('app');
+    }
+  };
+
   // Tras iniciar sesión: si es alumno y todavía no cargó el DNI, se lo pedimos antes de entrar
   const alIngresar = () => {
     const u = usuarioActual();
-    setVista(u && u.rol !== 'profesor' && !u.dni ? 'dni' : 'app');
+    const esAlumno = !!u && u.rol !== 'profesor';
+    if (esAlumno && !u.dni) {
+      setVista('dni');
+      return;
+    }
+    if (esAlumno) {
+      seguirDespuesDelDni();
+      return;
+    }
+    setRecienRegistrado(false); // un profesor no pasa por la pantalla de materias
+    setVista('app');
   };
 
   // Tipografías de la app (las usa la pantalla de Inicio)
@@ -47,7 +72,8 @@ function Layout() {
     <ThemeProvider value={theme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       {vista === 'app' && <AppTabs />}
-      {vista === 'dni' && <DniScreen onListo={() => setVista('app')} />}
+      {vista === 'dni' && <DniScreen onListo={seguirDespuesDelDni} />}
+      {vista === 'materias' && <ElegirMaterias alCerrar={() => setVista('app')} />}
       {vista === 'login' && (
         <LoginScreen
           onLoginSuccess={alIngresar}
@@ -56,7 +82,10 @@ function Layout() {
       )}
       {vista === 'registro' && (
         <RegisterScreen
-          onRegisterSuccess={() => setVista('login')}
+          onRegisterSuccess={() => {
+            setRecienRegistrado(true);
+            setVista('login');
+          }}
           onGoToLogin={() => setVista('login')}
         />
       )}
