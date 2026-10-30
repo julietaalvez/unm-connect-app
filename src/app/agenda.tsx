@@ -4,8 +4,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import HeaderMapa from '../components/HeaderMapa';
+import { cargarProfesores } from '../lib/api';
 import type { Cursada } from '../lib/inscripciones';
 import { FERIADOS, armarCursadas, useCatalogo, useInscripciones } from '../lib/inscripciones';
+import { usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
 import { useWf } from '../lib/wf';
 
@@ -43,6 +45,9 @@ type AgendaEvent = {
   color?: string;
 };
 
+// Lo mínimo que hace falta de una cursada para armar sus eventos (sirve para alumnos y docentes)
+type ClaseAgenda = { clave: string; materia: string; franjas: Cursada['franjas'] };
+
 const STORAGE_KEY = 'unm-conect-agenda-eventos';
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const SHORT_MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
@@ -75,10 +80,27 @@ const parseKey = (key: string) => {
   return new Date(year, month - 1, day);
 };
 
+/* ---- nombres: sin tildes, sin mayúsculas y sin importar el orden ---- */
+const tokens = (t: string) =>
+  t
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .split(/[\s,.]+/)
+    .filter((x) => x && x !== 'prof');
+
+const mismoNombre = (a: string, b: string) => {
+  const ta = tokens(a);
+  const tb = tokens(b);
+  if (!ta.length || !tb.length) return false;
+  const [corto, largo] = ta.length <= tb.length ? [ta, tb] : [tb, ta];
+  return corto.every((x) => largo.includes(x));
+};
+
 const FERIADOS_EVENTS: AgendaEvent[] = Object.entries(FERIADOS).map(([date, title]) => ({ id: `f-${date}`, date, type: 'aviso', title }));
 
-// Eventos de las materias en las que el usuario está inscripto, repetidos cada semana del cuatrimestre
-function eventosDeCursadas(cursadas: Cursada[]): AgendaEvent[] {
+// Eventos de las clases (cursadas del alumno o clases del docente), repetidos cada semana del cuatrimestre
+function eventosDeCursadas(cursadas: ClaseAgenda[]): AgendaEvent[] {
   const events: AgendaEvent[] = [];
   const inicio = new Date(2026, 7, 3);
   const fin = new Date(2026, 11, 4);
@@ -157,11 +179,45 @@ export default function AgendaScreen() {
     if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(customEvents)).catch(() => {});
   }, [customEvents, loaded]);
 
+  // Alumno: las cursadas en las que se inscribió
   const catalogo = useCatalogo();
   const { claves } = useInscripciones();
-  const eventosMaterias = useMemo(
-    () => eventosDeCursadas(armarCursadas(catalogo).filter((c) => claves.has(c.clave))),
+  const cursadasAlumno = useMemo<ClaseAgenda[]>(
+    () => armarCursadas(catalogo).filter((c) => claves.has(c.clave)),
     [catalogo, claves]
+  );
+
+  // Docente: las clases que dicta (se buscan por nombre en /profesores)
+  const usuario = usuarioActual();
+  const esProfesor = usuario?.rol === 'profesor';
+  const nombreUsuario = usuario?.nombre ?? '';
+  const [clasesDocente, setClasesDocente] = useState<ClaseAgenda[]>([]);
+  useEffect(() => {
+    if (!esProfesor) return;
+    let vivo = true;
+    cargarProfesores()
+      .then((r) => {
+        if (!vivo) return;
+        const mio = r.datos.find((p) => mismoNombre(p.nombre, nombreUsuario));
+        setClasesDocente(
+          mio
+            ? mio.franjas.map((f, i) => ({
+                clave: `${f.materia}|${f.comision}|${i}`,
+                materia: f.materia,
+                franjas: [f],
+              }))
+            : []
+        );
+      })
+      .catch(() => {});
+    return () => {
+      vivo = false;
+    };
+  }, [esProfesor, nombreUsuario]);
+
+  const eventosMaterias = useMemo(
+    () => eventosDeCursadas(esProfesor ? clasesDocente : cursadasAlumno),
+    [esProfesor, clasesDocente, cursadasAlumno]
   );
   const allEvents = useMemo(
     () => [...FERIADOS_EVENTS, ...eventosMaterias, ...customEvents].sort((a, b) => `${a.date}${a.start || ''}`.localeCompare(`${b.date}${b.start || ''}`)),

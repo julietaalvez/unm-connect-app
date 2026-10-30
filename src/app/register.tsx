@@ -28,6 +28,7 @@ export default function RegisterScreen({
   const [rol, setRol] = useState<Rol>('alumno');
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
+  const [dni, setDni] = useState('');
   const [contrasena, setContrasena] = useState('');
   const [confirmar, setConfirmar] = useState('');
   const [error, setError] = useState('');
@@ -67,6 +68,10 @@ export default function RegisterScreen({
       setError('Completá todos los campos.');
       return;
     }
+    if (rol === 'alumno' && !/^\d{7,8}$/.test(dni)) {
+      setError('Ingresá tu DNI: 7 u 8 números, sin puntos.');
+      return;
+    }
     if (contrasena !== confirmar) {
       setError('Las contraseñas no coinciden.');
       return;
@@ -81,7 +86,14 @@ export default function RegisterScreen({
       const res = await fetch(`${API_URL}/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nombre, email, contrasena, carreras: elegidas, rol }),
+        body: JSON.stringify({
+          nombre,
+          email,
+          contrasena,
+          carreras: elegidas,
+          rol,
+          ...(rol === 'alumno' ? { dni } : {}),
+        }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -140,6 +152,17 @@ export default function RegisterScreen({
         value={email}
         onChangeText={setEmail}
       />
+      {rol === 'alumno' && (
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
+          placeholder="DNI (sin puntos)"
+          placeholderTextColor={colors.placeholder}
+          keyboardType="number-pad"
+          maxLength={8}
+          value={dni}
+          onChangeText={(t) => setDni(t.replace(/\D/g, ''))}
+        />
+      )}
       <TextInput
         style={[styles.input, { backgroundColor: colors.card, color: colors.text }]}
         placeholder="Contraseña"

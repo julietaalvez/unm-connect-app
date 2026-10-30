@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
+import AlumnosComision from '../components/AlumnosComision';
 import EditarPerfil from '../components/EditarPerfil';
 import HeaderMapa from '../components/HeaderMapa';
 import PlanillaMaterias from '../components/PlanillaMaterias';
@@ -19,6 +20,7 @@ import { Wf, useWf } from '../lib/wf';
 const ICONOS = {
   perfil: require('../../assets/icons/perfil.png'),
   materias: require('../../assets/icons/materias.png'),
+  profesores: require('../../assets/icons/profesores.png'),
   notificaciones: require('../../assets/icons/notificaciones.png'),
   ajustes: require('../../assets/icons/ajustes.png'),
   cerrarSesion: require('../../assets/icons/cerrar-sesion.png'),
@@ -49,6 +51,7 @@ const lineaFranja = (f: Cursada['franjas'][number]) =>
 
 const ROL: Record<string, string> = {
   estudiante: 'Estudiante de Multimedial',
+  profesor: 'Docente',
   docente: 'Docente',
   admin: 'Administración',
 };
@@ -69,13 +72,15 @@ export default function PerfilScreen() {
   const [agregando, setAgregando] = useState(false);
   const [busqueda, setBusqueda] = useState('');
   const [verPlanilla, setVerPlanilla] = useState(false);
-    const [editando, setEditando] = useState(false);
+  const [verAlumnos, setVerAlumnos] = useState(false);
+  const [editando, setEditando] = useState(false);
   const [, refrescar] = useState(0);
-    const [abNotif, setAbNotif] = useState(false);
+  const [abNotif, setAbNotif] = useState(false);
   const { activo: pushActivo, cambiar: cambiarPush } = usePush();
 
   const u = usuarioActual();
   const nombre = u?.nombre ?? 'Invitado';
+  const esProfesor = u?.rol === 'profesor';
   const catalogo = useCatalogo();
   const { claves, inscribir, quitar } = useInscripciones();
   const { carreras } = useCarreras();
@@ -94,12 +99,19 @@ export default function PerfilScreen() {
       .slice(0, 25);
   }, [todas, claves, busqueda, materiaCarreras, misCarreras]);
 
-  const proximamente = (que: string) => Alert.alert(que, 'Esta sección todavía no está disponible.');
   const salir = () =>
     Alert.alert('Cerrar sesión', '¿Querés salir de tu cuenta?', [
       { text: 'Cancelar', style: 'cancel' },
       { text: 'Salir', style: 'destructive', onPress: cerrarSesion },
     ]);
+
+  const abrirAlumnos = () => {
+    if (u?.id == null) {
+      Alert.alert('Alumnos de mis comisiones', 'No pudimos identificar tu cuenta. Cerrá sesión y volvé a entrar.');
+      return;
+    }
+    setVerAlumnos(true);
+  };
 
   const Fila = ({ icono, texto, onPress, abierto }: { icono: number; texto: string; onPress: () => void; abierto?: boolean }) => (
     <Pressable style={({ pressed }) => [s.fila, pressed && { transform: [{ scale: 0.99 }] }]} onPress={onPress}>
@@ -226,9 +238,14 @@ export default function PerfilScreen() {
           </View>
         )}
 
-        <Fila icono={ICONOS.materias} texto="Planilla de mi carrera" onPress={() => setVerPlanilla(true)} />
+        {/* alumnos: la planilla de progreso es para estudiantes; el docente ve quién se anotó en sus comisiones */}
+        {esProfesor ? (
+          <Fila icono={ICONOS.profesores} texto="Alumnos de mis comisiones" onPress={abrirAlumnos} />
+        ) : (
+          <Fila icono={ICONOS.materias} texto="Planilla de mi carrera" onPress={() => setVerPlanilla(true)} />
+        )}
 
-                <Fila icono={ICONOS.notificaciones} texto="Notificaciones" abierto={abNotif} onPress={() => setAbNotif((v) => !v)} />
+        <Fila icono={ICONOS.notificaciones} texto="Notificaciones" abierto={abNotif} onPress={() => setAbNotif((v) => !v)} />
         {abNotif && (
           <View style={s.sub}>
             <Pressable style={s.subFila} onPress={cambiarPush} accessibilityRole="switch" accessibilityState={{ checked: pushActivo }}>
@@ -258,10 +275,18 @@ export default function PerfilScreen() {
 
       <Text style={s.version}>{`UNM Connect · ${FUENTE}`}</Text>
 
-      <Modal visible={verPlanilla} animationType="slide" statusBarTranslucent onRequestClose={() => setVerPlanilla(false)}>
-        <PlanillaMaterias alCerrar={() => setVerPlanilla(false)} />
-      </Modal>
-            <Modal visible={editando} animationType="slide" onRequestClose={() => setEditando(false)}>
+      {esProfesor ? (
+        <Modal visible={verAlumnos} animationType="slide" statusBarTranslucent onRequestClose={() => setVerAlumnos(false)}>
+          <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: 40 }}>
+            <AlumnosComision usuarioId={Number(u?.id)} alCerrar={() => setVerAlumnos(false)} />
+          </View>
+        </Modal>
+      ) : (
+        <Modal visible={verPlanilla} animationType="slide" statusBarTranslucent onRequestClose={() => setVerPlanilla(false)}>
+          <PlanillaMaterias alCerrar={() => setVerPlanilla(false)} />
+        </Modal>
+      )}
+      <Modal visible={editando} animationType="slide" onRequestClose={() => setEditando(false)}>
         <EditarPerfil alCerrar={() => setEditando(false)} alGuardar={() => refrescar((n) => n + 1)} />
       </Modal>
     </ScrollView>
@@ -276,7 +301,8 @@ const makeStyles = (W: Wf, oscuro: boolean) =>
     plainBtn: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center' },
 
     profile: { alignItems: 'center', paddingHorizontal: 18, paddingBottom: 16 },
-    avatar: { width: 108, height: 108, borderRadius: 54, backgroundColor: W.card, alignItems: 'center', justifyContent: 'center', marginBottom: 12, overflow: 'hidden' },     avatarImg: { width: 108, height: 108, borderRadius: 54 },
+    avatar: { width: 108, height: 108, borderRadius: 54, backgroundColor: W.card, alignItems: 'center', justifyContent: 'center', marginBottom: 12, overflow: 'hidden' },
+    avatarImg: { width: 108, height: 108, borderRadius: 54 },
     avatarTxt: { fontFamily: F.h2, fontSize: 34, color: oscuro ? W.ink : W.navy },
     nombre: { fontFamily: F.h2, fontSize: 19, color: W.ink, textAlign: 'center' },
     rol: { fontFamily: F.body, fontSize: 13, color: W.ink, marginTop: 4, textAlign: 'center' },

@@ -1,5 +1,12 @@
 export type Rol = 'alumno' | 'profesor';
-export type Usuario = { id: number; nombre: string; email: string; rol: string; foto?: string | null };
+export type Usuario = {
+  id: number;
+  nombre: string;
+  email: string;
+  rol: string;
+  foto?: string | null;
+  dni?: string | null;
+};
 
 let actual: Usuario | null = null;
 let alCerrar: (() => void) | null = null;

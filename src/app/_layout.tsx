@@ -7,7 +7,8 @@ import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useState } from 'react';
-import { registrarCierre } from '../lib/sesion';
+import DniScreen from '../components/dni';
+import { registrarCierre, usuarioActual } from '../lib/sesion';
 import LoginScreen from './login';
 import RegisterScreen from './register';
 
@@ -15,12 +16,19 @@ SplashScreen.preventAutoHideAsync();
 
 function Layout() {
   const { theme } = useAppTheme();
-  const [vista, setVista] = useState<'login' | 'registro' | 'app'>('login');
-    // al cerrar sesión desde Perfil, vuelve al login
+  const [vista, setVista] = useState<'login' | 'registro' | 'dni' | 'app'>('login');
+
+  // Al cerrar sesión desde Perfil (o desde la pantalla del DNI), vuelve al login
   useEffect(() => {
     registrarCierre(() => setVista('login'));
     return () => registrarCierre(null);
   }, []);
+
+  // Tras iniciar sesión: si es alumno y todavía no cargó el DNI, se lo pedimos antes de entrar
+  const alIngresar = () => {
+    const u = usuarioActual();
+    setVista(u && u.rol !== 'profesor' && !u.dni ? 'dni' : 'app');
+  };
 
   // Tipografías de la app (las usa la pantalla de Inicio)
   const [fontsOk, fontError] = useFonts({
@@ -39,9 +47,10 @@ function Layout() {
     <ThemeProvider value={theme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
       {vista === 'app' && <AppTabs />}
+      {vista === 'dni' && <DniScreen onListo={() => setVista('app')} />}
       {vista === 'login' && (
         <LoginScreen
-          onLoginSuccess={() => setVista('app')}
+          onLoginSuccess={alIngresar}
           onGoToRegister={() => setVista('registro')}
         />
       )}

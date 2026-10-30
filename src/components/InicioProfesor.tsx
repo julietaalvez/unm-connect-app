@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  Linking,
   Modal,
   Pressable,
   RefreshControl,
@@ -21,11 +22,14 @@ import { useNovedades } from '../lib/novedades';
 import { usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
 import { useWf } from '../lib/wf';
+import AvisarAlumnos from './AvisarAlumnos';
+import EvaluacionesDocente from './EvaluacionesDocente';
 import HeaderMapa from './HeaderMapa';
 import { makeStyles } from './InicioAlumno';
 import NotificacionesScreen from './NotificacionesScreen';
 
 const FOTO_CAMPUS = require('../../assets/images/campus-foto.jpg');
+const URL_UNM = 'https://www.unm.edu.ar/';
 const IC = {
   campana: require('../../assets/icons/campana.png'),
   clase: require('../../assets/icons/clase.png'),
@@ -78,6 +82,8 @@ export default function InicioProfesor() {
   const [clases, setClases] = useState<ClaseHoy[]>(() => clasesEjemplo());
   const [fuente, setFuente] = useState<Fuente>('ejemplo');
   const [verNotifs, setVerNotifs] = useState(false);
+  const [verAvisar, setVerAvisar] = useState(false);
+  const [verNotas, setVerNotas] = useState(false);
   const { lista: novedades, sinLeer, recargar: recargarNovedades } = useNovedades();
   const [, setTic] = useState(0);
 
@@ -203,8 +209,12 @@ export default function InicioProfesor() {
               )}
             </View>
 
-            {/* banner */}
-            <View style={[s.hero, ancho && { height: 220 }]}>
+            {/* banner: al tocarlo abre el sitio de la UNM */}
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Abrir el sitio de la Universidad Nacional de Moreno"
+              onPress={() => Linking.openURL(URL_UNM).catch(() => {})}
+              style={({ pressed }) => [s.hero, ancho && { height: 220 }, pressed && { opacity: 0.9 }]}>
               <Image
                 source={FOTO_CAMPUS}
                 style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]}
@@ -221,23 +231,51 @@ export default function InicioProfesor() {
                 <Text style={s.heroB}>Universidad Nacional de Moreno</Text>
                 <Text style={s.heroSpan}>Más cerca, siempre.</Text>
               </View>
-            </View>
+            </Pressable>
           </View>
 
           <View style={ancho ? s.colDer : undefined}>
             <Text style={[s.quickTitle, ancho && { marginTop: 0 }]}>Accesos rápidos</Text>
-            <View style={[s.quick, ancho && { justifyContent: 'flex-start' }]}>
+            <View style={[s.quick, { flexWrap: 'wrap', rowGap: 12 }, ancho && { justifyContent: 'flex-start' }]}>
               <Pressable style={s.qbtn} onPress={() => router.navigate('/agenda')}>
                 <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
                 <Text style={s.qTxt}>Novedades</Text>
               </Pressable>
               <Pressable
                 style={s.qbtn}
-                onPress={() =>
-                  Alert.alert('Avisar a mis alumnos', 'Esta pantalla se está armando y estará disponible pronto.')
-                }>
+                onPress={() => {
+                  if (usuarioActual()?.id == null) {
+                    Alert.alert(
+                      'Avisar a mis alumnos',
+                      'No pudimos identificar tu cuenta. Cerrá sesión y volvé a entrar.'
+                    );
+                    return;
+                  }
+                  setVerAvisar(true);
+                }}>
                 <Image source={IC.campana} style={s.qIc} resizeMode="contain" />
                 <Text style={s.qTxt}>Avisar a mis alumnos</Text>
+              </Pressable>
+              <Pressable
+                style={s.qbtn}
+                onPress={() => {
+                  if (usuarioActual()?.id == null) {
+                    Alert.alert(
+                      'Evaluaciones y notas',
+                      'No pudimos identificar tu cuenta. Cerrá sesión y volvé a entrar.'
+                    );
+                    return;
+                  }
+                  setVerNotas(true);
+                }}>
+                <Image source={IC.calendario} style={s.qIc} resizeMode="contain" />
+                <Text style={s.qTxt}>Evaluaciones y notas</Text>
+              </Pressable>
+              <Pressable
+                style={s.qbtn}
+                onPress={() => Alert.alert('Registrar presentes', 'Próximamente')}>
+                <Image source={IC.clase} style={s.qIc} resizeMode="contain" />
+                <Text style={s.qTxt}>Registrar presentes</Text>
               </Pressable>
             </View>
 
@@ -275,6 +313,18 @@ export default function InicioProfesor() {
 
       <Modal visible={verNotifs} animationType="slide" statusBarTranslucent onRequestClose={() => setVerNotifs(false)}>
         <NotificacionesScreen alCerrar={() => setVerNotifs(false)} />
+      </Modal>
+
+      <Modal visible={verAvisar} animationType="slide" statusBarTranslucent onRequestClose={() => setVerAvisar(false)}>
+        <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: 40 }}>
+          <AvisarAlumnos usuarioId={Number(usuarioActual()?.id)} onVolver={() => setVerAvisar(false)} />
+        </View>
+      </Modal>
+
+      <Modal visible={verNotas} animationType="slide" statusBarTranslucent onRequestClose={() => setVerNotas(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: 40 }}>
+          <EvaluacionesDocente usuarioId={Number(usuarioActual()?.id)} onVolver={() => setVerNotas(false)} />
+        </View>
       </Modal>
     </ScrollView>
   );

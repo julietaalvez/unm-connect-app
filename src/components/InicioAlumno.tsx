@@ -1,9 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { Alert, Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import HeaderMapa from '../components/HeaderMapa';
+import MisNotas from '../components/MisNotas';
 import NotificacionesScreen from '../components/NotificacionesScreen';
 import ProfesoresScreen from '../components/ProfesoresScreen';
 import { ClaseHoy, Fuente, cargarClasesHoy, clasesEjemplo } from '../lib/api';
@@ -16,6 +17,7 @@ import { useTema } from '../lib/tema';
 import { Wf, useWf } from '../lib/wf';
 
 const FOTO_CAMPUS = require('../../assets/images/campus-foto.jpg');
+const URL_UNM = 'https://www.unm.edu.ar/';
 const IC = {
   campana: require('../../assets/icons/campana.png'),
   clase: require('../../assets/icons/clase.png'),
@@ -65,6 +67,7 @@ export default function InicioAlumno() {
   const [fuente, setFuente] = useState<Fuente>('ejemplo');
   const [, setCargando] = useState(true);
   const [verProfes, setVerProfes] = useState(false);
+  const [verNotas, setVerNotas] = useState(false);
   const [, setTic] = useState(0);
 
   const cargar = useCallback(async () => {
@@ -189,8 +192,13 @@ export default function InicioAlumno() {
               )}
             </View>
 
-            {/* banner */}
-            <View style={[s.hero, ancho && { height: 220 }]}>
+            {/* banner: al tocarlo abre el sitio de la UNM */}
+            <Pressable
+              accessibilityRole="link"
+              accessibilityLabel="Abrir el sitio de la Universidad Nacional de Moreno"
+              onPress={() => Linking.openURL(URL_UNM).catch(() => {})}
+              style={({ pressed }) => [s.hero, ancho && { height: 220 }, pressed && { opacity: 0.9 }]}
+            >
               <Image
                 source={FOTO_CAMPUS}
                 style={[StyleSheet.absoluteFill, { width: '100%', height: '100%' }]}
@@ -207,13 +215,13 @@ export default function InicioAlumno() {
                 <Text style={s.heroB}>Universidad Nacional de Moreno</Text>
                 <Text style={s.heroSpan}>Más cerca, siempre.</Text>
               </View>
-            </View>
+            </Pressable>
           </View>
 
           {/* columna derecha: accesos, aulas libres, novedades */}
           <View style={ancho ? s.colDer : undefined}>
             <Text style={[s.quickTitle, ancho && { marginTop: 0 }]}>Accesos rápidos</Text>
-            <View style={[s.quick, ancho && { justifyContent: 'flex-start' }]}>
+            <View style={[s.quick, { flexWrap: 'wrap', rowGap: 12 }, ancho && { justifyContent: 'flex-start' }]}>
               <Pressable style={s.qbtn} onPress={() => router.navigate('/agenda')}>
                 <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
                 <Text style={s.qTxt}>Novedades</Text>
@@ -221,6 +229,19 @@ export default function InicioAlumno() {
               <Pressable style={s.qbtn} onPress={() => setVerProfes(true)}>
                 <Image source={IC.profesores} style={s.qIc} resizeMode="contain" />
                 <Text style={s.qTxt}>Profesores</Text>
+              </Pressable>
+              <Pressable
+                style={s.qbtn}
+                onPress={() => {
+                  if (usuarioActual()?.id == null) {
+                    Alert.alert('Mis notas', 'No pudimos identificar tu cuenta. Cerrá sesión y volvé a entrar.');
+                    return;
+                  }
+                  setVerNotas(true);
+                }}
+              >
+                <Image source={IC.calendario} style={s.qIc} resizeMode="contain" />
+                <Text style={s.qTxt}>Mis notas</Text>
               </Pressable>
             </View>
 
@@ -262,6 +283,11 @@ export default function InicioAlumno() {
       </Modal>
       <Modal visible={verNotifs} animationType="slide" statusBarTranslucent onRequestClose={() => setVerNotifs(false)}>
         <NotificacionesScreen alCerrar={() => setVerNotifs(false)} />
+      </Modal>
+      <Modal visible={verNotas} animationType="slide" statusBarTranslucent onRequestClose={() => setVerNotas(false)}>
+        <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: 40 }}>
+          <MisNotas usuarioId={Number(usuarioActual()?.id)} alCerrar={() => setVerNotas(false)} />
+        </View>
       </Modal>
     </ScrollView>
   );
