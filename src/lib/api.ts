@@ -87,9 +87,22 @@ async function conRespaldo<T>(ruta: string, normalizar: (r: unknown) => T[] | nu
 
 export const cargarClasesHoy = () => conRespaldo('/clases/hoy', normalizarClases, clasesEjemplo);
 export const cargarNovedades = () => conRespaldo('/novedades', normalizarNovedades, () => NOVEDADES_EJEMPLO);
+
 /* ---------- Profesores: GET /profesores ---------- */
 const idEdificioPorNombre = (nombre: string): string | null =>
   Object.entries(EDIFICIOS).find(([, e]) => e.name.toLowerCase() === nombre.toLowerCase())?.[0] ?? null;
+
+// CAMBIO: usa primero el id que manda el servidor (ej. "edificio-historico") si ese plano existe;
+// si no, busca por nombre como antes
+const idEdificio = (idServidor: unknown, nombre: string): string | null => {
+  const id = txt(idServidor);
+  if (id) {
+    const sin = id.replace(/^edificio-/, '');
+    const clave = [id, 'edificio-' + sin, sin].find((k) => !!EDIFICIOS[k]);
+    if (clave) return clave;
+  }
+  return idEdificioPorNombre(nombre);
+};
 
 function normalizarProfes(raw: unknown): Profe[] | null {
   if (!Array.isArray(raw)) return null;
@@ -103,7 +116,7 @@ function normalizarProfes(raw: unknown): Profe[] | null {
         desde: txt(f.desde).slice(0, 5),
         hasta: txt(f.hasta).slice(0, 5),
         edificio: txt(f.edificio),
-        edificioId: idEdificioPorNombre(txt(f.edificio)),   // el id del plano, no el de la base
+        edificioId: idEdificio(f.edificioId, txt(f.edificio)), // CAMBIO: el id del plano
         aula: f.aula ? txt(f.aula) : null,
         lugar: txt(f.lugar),
         extra: Array.isArray(f.extra) ? f.extra.map(txt) : [],

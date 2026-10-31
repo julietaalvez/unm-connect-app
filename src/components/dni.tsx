@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { API_URL } from '../lib/api';
 import { cerrarSesion, guardarUsuario, usuarioActual } from '../lib/sesion';
+import BotonTema from './BotonTema';
 
 /** Se muestra una sola vez a los usuarios que se registraron antes de que el DNI fuera obligatorio. */
 export default function DniScreen({ onListo }: { onListo?: () => void }) {
@@ -19,7 +20,7 @@ export default function DniScreen({ onListo }: { onListo?: () => void }) {
     card: isDark ? '#16213a' : '#f2f4f7',
     placeholder: isDark ? '#8a93a6' : '#9aa3b2',
     navy: isDark ? '#9cc2ff' : '#1c3d6e',
-    onNavy: '#ffffff',
+    onNavy: isDark ? '#04101f' : '#ffffff', // CAMBIO: legible sobre el azul claro del modo oscuro
   };
 
   const guardar = async () => {
@@ -56,6 +57,9 @@ export default function DniScreen({ onListo }: { onListo?: () => void }) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {/* CAMBIO: botón de modo claro/oscuro, igual que en el login */}
+      <BotonTema style={styles.themeBtn} />
+
       <Text style={[styles.title, { color: colors.text }]}>Completá tu DNI</Text>
       <Text style={[styles.ayuda, { color: colors.text }]}>
         Lo usamos para que las notas que cargue tu docente lleguen a tu cuenta. No lo ve ningún otro
@@ -92,6 +96,7 @@ export default function DniScreen({ onListo }: { onListo?: () => void }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, justifyContent: 'center', paddingHorizontal: 26 },
+  themeBtn: { position: 'absolute', top: 50, right: 20 }, // CAMBIO
   title: { fontSize: 20, fontWeight: '700', textAlign: 'center', marginBottom: 12 },
   ayuda: { fontSize: 13.5, textAlign: 'center', marginBottom: 22, marginHorizontal: 4 },
   input: { borderRadius: 10, fontSize: 16, padding: 14, marginBottom: 16 },

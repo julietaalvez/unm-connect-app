@@ -37,6 +37,7 @@ const IC = {
   pin: require('../../assets/icons/pin.png'),
   reloj: require('../../assets/icons/reloj.png'),
   calendario: require('../../assets/icons/materias.png'),
+  evaluaciones: require('../../assets/icons/evaluaciones.png'),
 };
 const ICONO_TIPO = { aula: IC.pin, evento: IC.calendario, aviso: IC.campana };
 
@@ -253,7 +254,7 @@ export default function InicioProfesor() {
                   }
                   setVerAvisar(true);
                 }}>
-                {/* CAMBIO: icono teñido con el azul oscuro del tema */}
+                {/* icono teñido con el azul oscuro del tema */}
                 <Image source={IC.campana} style={s.qIcNavy} resizeMode="contain" />
                 <Text style={s.qTxt}>Avisar a mis alumnos</Text>
               </Pressable>
@@ -269,16 +270,9 @@ export default function InicioProfesor() {
                   }
                   setVerNotas(true);
                 }}>
-                {/* CAMBIO: icono teñido con el azul oscuro del tema */}
-                <Image source={IC.calendario} style={s.qIcNavy} resizeMode="contain" />
+                {/* icono nuevo (hoja con lápiz), teñido con el azul oscuro del tema */}
+                <Image source={IC.evaluaciones} style={s.qIcNavy} resizeMode="contain" />
                 <Text style={s.qTxt}>Evaluaciones y notas</Text>
-              </Pressable>
-              <Pressable
-                style={s.qbtn}
-                onPress={() => Alert.alert('Registrar presentes', 'Próximamente')}>
-                {/* CAMBIO: icono teñido con el azul oscuro del tema */}
-                <Image source={IC.clase} style={s.qIcNavy} resizeMode="contain" />
-                <Text style={s.qTxt}>Registrar presentes</Text>
               </Pressable>
             </View>
 
@@ -325,7 +319,7 @@ export default function InicioProfesor() {
       </Modal>
 
       <Modal visible={verNotas} animationType="slide" statusBarTranslucent onRequestClose={() => setVerNotas(false)}>
-        <View style={{ flex: 1, backgroundColor: '#fff', paddingTop: 40 }}>
+        <View style={{ flex: 1, backgroundColor: C.bg, paddingTop: 40 }}>
           <EvaluacionesDocente usuarioId={Number(usuarioActual()?.id)} onVolver={() => setVerNotas(false)} />
         </View>
       </Modal>

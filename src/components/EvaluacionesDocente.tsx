@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -27,16 +27,43 @@ import {
   obtenerCarrerasDocente,
   obtenerEvaluaciones,
 } from '../lib/notas';
+import { Colores, useTema } from '../lib/tema';
+import BotonTema from './BotonTema';
 
 type Props = { usuarioId: number; onVolver?: () => void };
 type Vista = { t: 'lista' } | { t: 'nueva' } | { t: 'detalle'; id: number };
 
 const etiquetaEstado = (e: Estado) => ESTADOS.find((x) => x.valor === e)?.label ?? e;
 
+function useEstilos() {
+  const { C, modo } = useTema();
+  const oscuro = modo === 'dark';
+  const s = useMemo(() => makeStyles(C, oscuro), [C, oscuro]);
+  return { C, s, oscuro };
+}
+
+/** Barra de arriba: "Volver" a la izquierda y el botón de modo claro/oscuro a la derecha */
+function Barra({ onVolver }: { onVolver?: () => void }) {
+  const { s } = useEstilos();
+  return (
+    <View style={s.barra}>
+      {onVolver ? (
+        <TouchableOpacity onPress={onVolver} accessibilityLabel="Volver">
+          <Text style={s.volver}>‹ Volver</Text>
+        </TouchableOpacity>
+      ) : (
+        <View />
+      )}
+      <BotonTema />
+    </View>
+  );
+}
+
 /* ============================================================
    Pantalla principal: lista → nueva / detalle
    ============================================================ */
 export default function EvaluacionesDocente({ usuarioId, onVolver }: Props) {
+  const { C, s } = useEstilos();
   const insets = useSafeAreaInsets();
   const [vista, setVista] = useState<Vista>({ t: 'lista' });
   const [evals, setEvals] = useState<Evaluacion[]>([]);
@@ -63,7 +90,16 @@ export default function EvaluacionesDocente({ usuarioId, onVolver }: Props) {
 
   const nombreCarrera = (id: number) => carreras.find((c) => c.id === id)?.nombre ?? 'Carrera';
 
-  if (cargando) return <View style={s.raiz}><ActivityIndicator style={{ marginTop: 40 }} /></View>;
+  if (cargando) {
+    return (
+      <View style={s.raiz}>
+        <View style={s.cont}>
+          <Barra onVolver={onVolver} />
+        </View>
+        <ActivityIndicator style={{ marginTop: 20 }} color={C.dim} />
+      </View>
+    );
+  }
 
   if (vista.t === 'nueva') {
     return (
@@ -104,11 +140,7 @@ export default function EvaluacionesDocente({ usuarioId, onVolver }: Props) {
   return (
     <View style={s.raiz}>
       <ScrollView contentContainerStyle={[s.cont, { paddingBottom: 60 + insets.bottom }]}>
-        {onVolver && (
-          <TouchableOpacity onPress={onVolver}>
-            <Text style={s.volver}>‹ Volver</Text>
-          </TouchableOpacity>
-        )}
+        <Barra onVolver={onVolver} />
         <Text style={s.h1}>Evaluaciones y notas</Text>
 
         {!!error && <Text style={s.error}>{error}</Text>}
@@ -164,6 +196,7 @@ function SelectorEstado({
   fecha: string;
   setFecha: (t: string) => void;
 }) {
+  const { C, s } = useEstilos();
   return (
     <>
       <Text style={s.label}>Estado</Text>
@@ -187,6 +220,7 @@ function SelectorEstado({
             value={fecha}
             onChangeText={setFecha}
             placeholder="AAAA-MM-DD HH:MM  (ej: 2026-11-20 18:00)"
+            placeholderTextColor={C.placeholder}
             autoCapitalize="none"
             keyboardType="numbers-and-punctuation"
             maxLength={16}
@@ -221,6 +255,7 @@ function NuevaEvaluacion({
   onVolver: () => void;
   onCreada: (id: number) => void;
 }) {
+  const { C, s } = useEstilos();
   const insets = useSafeAreaInsets();
   const [nombre, setNombre] = useState('');
   const [carreraId, setCarreraId] = useState<number | null>(carreras.length === 1 ? carreras[0].id : null);
@@ -244,9 +279,7 @@ function NuevaEvaluacion({
 
   return (
     <ScrollView contentContainerStyle={[s.cont, { paddingBottom: 60 + insets.bottom }]} keyboardShouldPersistTaps="handled">
-      <TouchableOpacity onPress={onVolver}>
-        <Text style={s.volver}>‹ Volver</Text>
-      </TouchableOpacity>
+      <Barra onVolver={onVolver} />
       <Text style={s.h1}>Nueva evaluación</Text>
 
       <Text style={s.label}>Nombre</Text>
@@ -256,6 +289,7 @@ function NuevaEvaluacion({
         onChangeText={setNombre}
         maxLength={120}
         placeholder="Ej: Primer parcial"
+        placeholderTextColor={C.placeholder}
       />
 
       <Text style={s.label}>Carrera</Text>
@@ -271,7 +305,7 @@ function NuevaEvaluacion({
       <SelectorEstado estado={estado} setEstado={setEstado} fecha={fecha} setFecha={setFecha} />
 
       <TouchableOpacity style={[s.boton, !puede && s.botonOff]} disabled={!puede} onPress={crear}>
-        {creando ? <ActivityIndicator color="#fff" /> : <Text style={s.botonTxt}>Crear y cargar notas</Text>}
+        {creando ? <ActivityIndicator color={C.onAccent} /> : <Text style={s.botonTxt}>Crear y cargar notas</Text>}
       </TouchableOpacity>
     </ScrollView>
   );
@@ -291,6 +325,7 @@ function Detalle({
   carrera: string;
   onVolver: () => void;
 }) {
+  const { C, s } = useEstilos();
   const insets = useSafeAreaInsets();
   const [nombre, setNombre] = useState(ev.nombre);
   const [estado, setEstado] = useState<Estado>(ev.estado);
@@ -382,20 +417,24 @@ function Detalle({
 
   return (
     <ScrollView contentContainerStyle={[s.cont, { paddingBottom: 60 + insets.bottom }]} keyboardShouldPersistTaps="handled">
-      <TouchableOpacity onPress={onVolver}>
-        <Text style={s.volver}>‹ Volver</Text>
-      </TouchableOpacity>
+      <Barra onVolver={onVolver} />
       <Text style={s.h1}>{ev.nombre}</Text>
       <Text style={s.chipSub}>{carrera}</Text>
 
       <Text style={s.label}>Nombre</Text>
-      <TextInput style={s.input} value={nombre} onChangeText={setNombre} maxLength={120} />
+      <TextInput
+        style={s.input}
+        value={nombre}
+        onChangeText={setNombre}
+        maxLength={120}
+        placeholderTextColor={C.placeholder}
+      />
 
       <SelectorEstado estado={estado} setEstado={setEstado} fecha={fecha} setFecha={setFecha} />
 
       <TouchableOpacity style={[s.botonChico, guardando && s.botonOff]} disabled={guardando} onPress={confirmarGuardar}>
         {guardando ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator color={C.onAccent} />
         ) : (
           <Text style={s.botonTxt}>{guardadoOk ? '✓ Guardado' : 'Guardar cambios'}</Text>
         )}
@@ -411,10 +450,11 @@ function Detalle({
         value={q}
         onChangeText={setQ}
         placeholder="Buscar alumno por nombre"
+        placeholderTextColor={C.placeholder}
         autoCorrect={false}
       />
 
-      {cargandoAlumnos && <ActivityIndicator style={{ marginTop: 20 }} />}
+      {cargandoAlumnos && <ActivityIndicator style={{ marginTop: 20 }} color={C.dim} />}
       {!!errorAlumnos && <Text style={s.error}>{errorAlumnos}</Text>}
       {!cargandoAlumnos && !errorAlumnos && alumnos.length === 0 && (
         <Text style={[s.vacio, { marginTop: 14 }]}>
@@ -447,6 +487,7 @@ function FilaAlumno({
   alumno: AlumnoNota;
   onGuardar: (id: number, valor: string) => Promise<void>;
 }) {
+  const { C, s } = useEstilos();
   const [valor, setValor] = useState(alumno.nota ?? '');
   const [estado, setEstado] = useState<'' | 'guardando' | 'ok' | 'error'>('');
   const guardada = useRef(alumno.nota ?? ''); // lo último que confirmó el servidor
@@ -513,6 +554,7 @@ function FilaAlumno({
         onBlur={alSalir}
         onSubmitEditing={alSalir}
         placeholder="Nota"
+        placeholderTextColor={C.placeholder}
         maxLength={40}
         returnKeyType="done"
       />
@@ -520,46 +562,51 @@ function FilaAlumno({
   );
 }
 
-const s = StyleSheet.create({
-  raiz: { flex: 1, backgroundColor: '#fff' },
-  cont: { padding: 20, paddingBottom: 60 },
-  volver: { fontSize: 16, color: '#1e5aa8', marginBottom: 8 },
-  h1: { fontSize: 22, fontWeight: '700', marginBottom: 8, color: '#111' },
-  label: { fontSize: 14, fontWeight: '600', marginTop: 16, marginBottom: 6, color: '#111' },
-  ayuda: { fontSize: 12.5, color: '#666', marginTop: 6 },
-  vacio: { color: '#666' },
-  error: { marginVertical: 12, color: '#b00020' },
-  fila: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
-  chip: { borderWidth: 1, borderColor: '#ccc', borderRadius: 10, padding: 12, marginBottom: 8 },
-  chipActivo: { backgroundColor: '#1e5aa8', borderColor: '#1e5aa8' },
-  chipTitulo: { fontSize: 15, fontWeight: '600', color: '#111' },
-  chipSub: { fontSize: 12.5, color: '#666', marginTop: 2 },
-  textoActivo: { color: '#fff' },
-  tarjeta: { borderWidth: 1, borderColor: '#ddd', borderRadius: 12, padding: 14, marginTop: 12 },
-  etiqueta: {
-    fontSize: 11.5, fontWeight: '700', color: '#555', backgroundColor: '#eee',
-    paddingVertical: 3, paddingHorizontal: 9, borderRadius: 999, overflow: 'hidden', marginTop: 6,
-  },
-  etiquetaOk: { color: '#1b6b2f', backgroundColor: '#dff3e4' },
-  pill: { borderWidth: 1, borderColor: '#ccc', borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 },
-  pillActivo: { backgroundColor: '#1e5aa8', borderColor: '#1e5aa8' },
-  pillTxt: { fontSize: 13.5, fontWeight: '600', color: '#111' },
-  input: { borderWidth: 1, borderColor: '#ccc', borderRadius: 10, padding: 12, fontSize: 15, color: '#111' },
-  boton: { backgroundColor: '#1e5aa8', borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 20 },
-  botonChico: { backgroundColor: '#1e5aa8', borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 16 },
-  botonOff: { opacity: 0.4 },
-  botonTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
-  filaAlumno: {
-    flexDirection: 'row', alignItems: 'center', gap: 8,
-    borderBottomWidth: 1, borderBottomColor: '#eee', paddingVertical: 10,
-  },
-  nombreAlumno: { flex: 1, fontSize: 15, color: '#111' },
-  estadoFila: { width: 16, textAlign: 'center', color: '#1b6b2f', fontWeight: '700' },
-  estadoError: { color: '#b00020' },
-  inputNota: {
-    width: 110, borderWidth: 1, borderColor: '#ccc', borderRadius: 8,
-    paddingVertical: 8, paddingHorizontal: 10, fontSize: 15, color: '#111', textAlign: 'center',
-  },
-  eliminar: { marginTop: 36, alignItems: 'center', padding: 12 },
-  eliminarTxt: { color: '#b00020', fontWeight: '600', fontSize: 14 },
-});
+const makeStyles = (C: Colores, oscuro: boolean) => {
+  const rojo = oscuro ? '#ff8a80' : '#b00020';
+  const verde = oscuro ? C.free : '#1b6b2f';
+  return StyleSheet.create({
+    raiz: { flex: 1, backgroundColor: C.bg },
+    cont: { padding: 20, paddingBottom: 60 },
+    barra: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+    volver: { fontSize: 16, color: C.pillTypeText },
+    h1: { fontSize: 22, fontWeight: '700', marginBottom: 8, color: C.text },
+    label: { fontSize: 14, fontWeight: '600', marginTop: 16, marginBottom: 6, color: C.text },
+    ayuda: { fontSize: 12.5, color: C.dim, marginTop: 6 },
+    vacio: { color: C.dim },
+    error: { marginVertical: 12, color: rojo },
+    fila: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+    chip: { borderWidth: 1, borderColor: C.border, backgroundColor: C.panel2, borderRadius: 10, padding: 12, marginBottom: 8 },
+    chipActivo: { backgroundColor: C.accent, borderColor: C.accent },
+    chipTitulo: { fontSize: 15, fontWeight: '600', color: C.text },
+    chipSub: { fontSize: 12.5, color: C.dim, marginTop: 2 },
+    textoActivo: { color: C.onAccent },
+    tarjeta: { borderWidth: 1, borderColor: C.border, backgroundColor: C.panel2, borderRadius: 12, padding: 14, marginTop: 12 },
+    etiqueta: {
+      fontSize: 11.5, fontWeight: '700', color: C.dim, backgroundColor: C.elevated,
+      paddingVertical: 3, paddingHorizontal: 9, borderRadius: 999, overflow: 'hidden', marginTop: 6,
+    },
+    etiquetaOk: { color: verde, backgroundColor: C.freeBg },
+    pill: { borderWidth: 1, borderColor: C.border, backgroundColor: C.panel2, borderRadius: 999, paddingVertical: 8, paddingHorizontal: 14 },
+    pillActivo: { backgroundColor: C.accent, borderColor: C.accent },
+    pillTxt: { fontSize: 13.5, fontWeight: '600', color: C.text },
+    input: { borderWidth: 1, borderColor: C.border, backgroundColor: C.panel2, borderRadius: 10, padding: 12, fontSize: 15, color: C.text },
+    boton: { backgroundColor: C.accent, borderRadius: 10, padding: 14, alignItems: 'center', marginTop: 20 },
+    botonChico: { backgroundColor: C.accent, borderRadius: 10, padding: 12, alignItems: 'center', marginTop: 16 },
+    botonOff: { opacity: 0.4 },
+    botonTxt: { color: C.onAccent, fontWeight: '700', fontSize: 15 },
+    filaAlumno: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      borderBottomWidth: 1, borderBottomColor: C.border, paddingVertical: 10,
+    },
+    nombreAlumno: { flex: 1, fontSize: 15, color: C.text },
+    estadoFila: { width: 16, textAlign: 'center', color: verde, fontWeight: '700' },
+    estadoError: { color: rojo },
+    inputNota: {
+      width: 110, borderWidth: 1, borderColor: C.border, backgroundColor: C.panel2, borderRadius: 8,
+      paddingVertical: 8, paddingHorizontal: 10, fontSize: 15, color: C.text, textAlign: 'center',
+    },
+    eliminar: { marginTop: 36, alignItems: 'center', padding: 12 },
+    eliminarTxt: { color: rojo, fontWeight: '600', fontSize: 14 },
+  });
+};

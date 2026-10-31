@@ -5,6 +5,7 @@ import { materiaDeMisCarreras, useMateriaCarreras, useMisCarreras } from '../lib
 import { armarCursadas, useCatalogo, useInscripciones } from '../lib/inscripciones';
 import { useTema } from '../lib/tema';
 import { Wf, useWf } from '../lib/wf';
+import BotonTema from './BotonTema';
 
 const F = {
   h2: 'Montserrat_800ExtraBold',
@@ -45,7 +46,11 @@ export default function ElegirMaterias({ alCerrar }: { alCerrar: () => void }) {
 
   return (
     <View style={[s.screen, { backgroundColor: C.bg }]}>
-      <Text style={s.titulo}>¿Qué materias cursás?</Text>
+      {/* CAMBIO: título + botón de modo claro/oscuro */}
+      <View style={s.cabeza}>
+        <Text style={s.titulo}>¿Qué materias cursás?</Text>
+        <BotonTema />
+      </View>
       <Text style={s.sub}>
         Elegí tus comisiones para recibir sus novedades y ver tus horarios. Podés cambiarlas cuando quieras
         desde Perfil → Mis materias.
@@ -101,7 +106,8 @@ export default function ElegirMaterias({ alCerrar }: { alCerrar: () => void }) {
 const makeStyles = (W: Wf, oscuro: boolean) =>
   StyleSheet.create({
     screen: { flex: 1, paddingTop: 56, paddingHorizontal: 24, paddingBottom: 28 },
-    titulo: { fontFamily: F.h2, fontSize: 20, color: W.ink },
+    cabeza: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10 }, // CAMBIO
+    titulo: { flex: 1, fontFamily: F.h2, fontSize: 20, color: W.ink },
     sub: { fontFamily: F.body, fontSize: 12.5, lineHeight: 18, color: W.meta, marginTop: 6, marginBottom: 14 },
     buscador: { backgroundColor: W.soft, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontFamily: F.body, fontSize: 13, color: W.ink, marginBottom: 12 },
     fila: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: W.soft, borderRadius: 10, paddingVertical: 9, paddingHorizontal: 12 },

@@ -37,15 +37,15 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
 
   const [query, setQuery] = useState('');
   const [filtro, setFiltro] = useState('todos');
-  const [sim, setSim] = useState<Momento | null>(null);   // null = hora real
+  const [sim, setSim] = useState<Momento | null>(null); // null = hora real
   const [simAbierto, setSimAbierto] = useState(false);
   const [sel, setSel] = useState<Profe | null>(null);
   const [, setTic] = useState(0);
   const [profes, setProfes] = useState<Profe[]>(PROFES);
-    const { ids: misCarreras } = useMisCarreras();
+  const { ids: misCarreras } = useMisCarreras();
   const mapaCarreras = useMateriaCarreras();
   const cuatri = periodoActual()?.cuatri;
-    const { datos: progreso } = useProgreso();
+  const { datos: progreso } = useProgreso();
 
   // Solo franjas del cuatrimestre actual y de mis carreras; el profe sin franjas se oculta
   const visibles = useMemo(
@@ -55,18 +55,18 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
           const franjas = p.franjas.filter(
             (f) =>
               (!f.cuatrimestre || f.cuatrimestre > 2 || !cuatri || f.cuatrimestre === cuatri) &&
-                           materiaDeMisCarreras(f.materia, mapaCarreras, misCarreras) &&
+              materiaDeMisCarreras(f.materia, mapaCarreras, misCarreras) &&
               progreso[f.materia]?.estado !== 'aprobada'
           );
           return { ...p, franjas, materias4: [...new Set(franjas.map((f) => f.materia))].slice(0, 4) };
         })
         .filter((p) => p.franjas.length > 0),
-        [profes, cuatri, mapaCarreras, misCarreras, progreso]
+    [profes, cuatri, mapaCarreras, misCarreras, progreso]
   );
 
-     useEffect(() => {
-       cargarProfesores().then((r) => setProfes(r.datos));
-     }, []);
+  useEffect(() => {
+    cargarProfesores().then((r) => setProfes(r.datos));
+  }, []);
 
   // refresca el estado cada minuto
   useEffect(() => {
@@ -76,7 +76,7 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
 
   const t = sim ?? ahoraReal();
 
- const todos = useMemo(() => visibles.map((p) => ({ p, e: estado(p, t) })), [visibles, t.day, t.min]);
+  const todos = useMemo(() => visibles.map((p) => ({ p, e: estado(p, t) })), [visibles, t.day, t.min]);
   const q = norm(query.trim());
   const buscados = todos.filter(
     (x) => !q || norm(x.p.nombre).includes(q) || x.p.franjas.some((f) => norm(f.materia).includes(q))
@@ -91,6 +91,7 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
     setSim({ day: base.day, min: Math.min(23 * 60 + 59, Math.max(0, base.min + delta)) });
   }
 
+  // CAMBIO: se agrega "t" para que funcione también si tocás el mismo destino dos veces
   function irAlMapa(destino: Franja) {
     setSel(null);
     alCerrar();
@@ -101,6 +102,7 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
         edificioId: destino.edificioId ?? '',
         aula: destino.aula ?? '',
         lugar: destino.lugar,
+        t: String(Date.now()),
       },
     } as never);
   }
@@ -287,11 +289,15 @@ function Detalle({
 
   const varias = new Set(p.franjas.map((f) => f.materia)).size > 1;
   const presSem = p.franjas.filter((f) => f.modo === 'presencial');
+
+  // CAMBIO: solo sirven para "Cómo llegar" las clases presenciales con aula vinculada al mapa
+  const conMapa = (f?: Franja | null) => !!f && f.modo === 'presencial' && !!f.aula;
   const destino =
-    (e.actual && e.actual.modo === 'presencial' && e.actual) ||
-    (e.proxima && e.proxima.modo === 'presencial' && e.proxima) ||
-    e.hoy.find((f) => f.modo === 'presencial') ||
-    presSem[0];
+    (conMapa(e.actual) && e.actual) ||
+    (conMapa(e.proxima) && e.proxima) ||
+    e.hoy.find(conMapa) ||
+    presSem.find(conMapa) ||
+    null;
 
   const bigBg = e.cls === 'clase' ? W.busyBg : e.cls === 'virtual' ? W.virtBg : C.panel2;
   const bigInk = textoEstado(e, pal);
@@ -382,7 +388,13 @@ function Detalle({
               <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
                 <Path d="M3 11l18-8-8 18-2-8z" />
               </Svg>
-              <Text style={s.goTxt}>{destino ? `Cómo llegar a ${destino.lugar}` : 'Sin clases presenciales'}</Text>
+              <Text style={s.goTxt}>
+                {destino
+                  ? `Cómo llegar a ${destino.lugar}`
+                  : presSem.length
+                  ? 'Su aula todavía no está en el mapa'
+                  : 'Sin clases presenciales'}
+              </Text>
             </Pressable>
             <Text style={s.mail}>Si el aula aparece solo como código (ej. I001), todavía no está vinculada al mapa.</Text>
           </ScrollView>
