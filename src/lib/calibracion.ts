@@ -13,9 +13,9 @@ export const REFERENCIAS: Referencia[] = [
 { donde: 'gate:corvalan', lat: -34.650738, lng: -58.778503 },
 { donde: 'edificio:Daract II', lat: -34.651063, lng: -58.774442 },
 { donde: 'edificio:Dorrego I', lat: -34.649463, lng: -58.776906 },
-{ donde: 'edificio:laboratorio', lat: -34.651489, lng:-58.774062 },
-{ donde: 'edificio: historico J', lat:-34.651570, lng:-58.774893 },
-{ donde: 'edificio: historico K', lat:-34.650212, lng:-58.775936 },
+{ donde: 'edificio:Laboratorios', lat: -34.651489, lng:-58.774062 },
+{ donde: 'edificio:Edificio Histórico', lat: -34.651276, lng: -58.776421 },
+{ donde: 'edificio:Comedor', lat: -34.650733, lng: -58.776816 },
 ];
 
 type XY = { x: number; y: number };

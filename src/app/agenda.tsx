@@ -1,12 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
 
 import HeaderMapa from '../components/HeaderMapa';
 import { cargarProfesores } from '../lib/api';
 import type { Cursada } from '../lib/inscripciones';
-import { FERIADOS, armarCursadas, useCatalogo, useInscripciones } from '../lib/inscripciones';
+import { armarCursadas, FERIADOS, useCatalogo, useInscripciones } from '../lib/inscripciones';
 import { usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
 import { useWf } from '../lib/wf';
@@ -48,7 +48,7 @@ type AgendaEvent = {
 // Lo mínimo que hace falta de una cursada para armar sus eventos (sirve para alumnos y docentes)
 type ClaseAgenda = { clave: string; materia: string; franjas: Cursada['franjas'] };
 
-const STORAGE_KEY = 'unm-conect-agenda-eventos';
+const claveAgenda = (uid: number) => `unm-conect-agenda-eventos:${uid}`;
 const MONTHS = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const SHORT_MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const WEEKDAYS = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
@@ -147,7 +147,10 @@ export default function AgendaScreen() {
 
   const todayKey = keyOf(new Date());
   const [customEvents, setCustomEvents] = useState<AgendaEvent[]>([]);
-  const [loaded, setLoaded] = useState(false);
+   const uid = usuarioActual()?.id ?? 0;
+  const [cargadoDe, setCargadoDe] = useState<number | null>(null);
+  const { width, height } = useWindowDimensions();
+  const horizontal = width > height;
   const [month, setMonth] = useState(new Date().getMonth());
   const [year, setYear] = useState(new Date().getFullYear());
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
@@ -163,21 +166,27 @@ export default function AgendaScreen() {
   const [classroom, setClassroom] = useState('');
   const [eventColor, setEventColor] = useState(PALETA_EVENTOS[3].color);
 
-  useEffect(() => {
-    AsyncStorage.getItem(STORAGE_KEY)
+   useEffect(() => {
+    let vivo = true;
+    setCargadoDe(null);
+    setCustomEvents([]);
+    AsyncStorage.getItem(claveAgenda(uid))
       .then((raw: string | null) => {
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) setCustomEvents(parsed);
-        }
+        const parsed = raw ? JSON.parse(raw) : [];
+        if (vivo) setCustomEvents(Array.isArray(parsed) ? parsed : []);
       })
       .catch(() => {})
-      .finally(() => setLoaded(true));
-  }, []);
+      .finally(() => {
+        if (vivo) setCargadoDe(uid);
+      });
+    return () => {
+      vivo = false;
+    };
+  }, [uid]);
 
   useEffect(() => {
-    if (loaded) AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(customEvents)).catch(() => {});
-  }, [customEvents, loaded]);
+    if (cargadoDe === uid) AsyncStorage.setItem(claveAgenda(uid), JSON.stringify(customEvents)).catch(() => {});
+  }, [customEvents, cargadoDe, uid]);
 
   // Alumno: las cursadas en las que se inscribió
   const catalogo = useCatalogo();
@@ -227,6 +236,7 @@ export default function AgendaScreen() {
   const eventColorsByDate = useMemo(() => {
     const result = new Map<string, string[]>();
     for (const ev of allEvents) {
+          if (ev.custom) continue;
       const colors = result.get(ev.date) ?? [];
       const color = colorDelEvento(ev);
       if (!colors.includes(color) && colors.length < 4) colors.push(color);
@@ -234,6 +244,12 @@ export default function AgendaScreen() {
     }
     return result;
   }, [allEvents]);
+
+   const anilloPorFecha = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const ev of customEvents) if (!m.has(ev.date)) m.set(ev.date, colorDelEvento(ev));
+    return m;
+  }, [customEvents]);
 
   const calendarDays = useMemo(() => {
     const first = new Date(year, month, 1);
@@ -312,6 +328,8 @@ export default function AgendaScreen() {
       <Text style={[s.h1, { color: W.ink }]}>AGENDA</Text>
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+               <View style={horizontal ? { flexDirection: 'row', gap: 16, alignItems: 'flex-start' } : undefined}>
+        <View style={horizontal ? { flex: 1 } : undefined}>
         {/* calendario */}
         <View style={[s.cal, { backgroundColor: W.card }]}>
           <View style={[s.calHead, { backgroundColor: K.headBg }]}>
@@ -338,7 +356,7 @@ export default function AgendaScreen() {
               const isSelected = selectedDate === day.date;
               const isToday = todayKey === day.date;
               const dayColors = eventColorsByDate.get(day.date) ?? [];
-              const hasEvent = eventDates.has(day.date);
+                          const anillo = anilloPorFecha.get(day.date);
               return (
                 <Pressable
                   key={day.date}
@@ -353,10 +371,10 @@ export default function AgendaScreen() {
                     }
                   }}
                 >
-                  <View style={[s.dayNum, isToday && { borderColor: K.ring }, isSelected && { backgroundColor: K.sel, borderColor: K.sel }]}>
+          <View style={[s.dayNum, isToday && { borderColor: K.ring, backgroundColor: `${K.ring}2E` }, anillo && { borderColor: anillo, borderWidth: 3 }, isSelected && { backgroundColor: K.sel, borderColor: K.sel }]}>
                     <Text style={[s.dayTxt, { color: isSelected ? '#fff' : day.inMonth ? K.dayTx : K.dayOut }]}>{day.day}</Text>
                   </View>
-                  {hasEvent && (
+                    {dayColors.length > 0 && (
                     <View style={s.marksRow}>
                       {dayColors.map((color, index) => (
                         <View key={`${day.date}-${color}-${index}`} style={[s.markDot, { backgroundColor: isSelected ? '#fff' : color }]} />
@@ -369,6 +387,8 @@ export default function AgendaScreen() {
           </View>
         </View>
 
+               </View>
+        <View style={horizontal ? { flex: 1 } : undefined}>
         {/* lista */}
         <View style={s.sectionHead}>
           <Text style={[s.sectionTitle, { color: W.ink }]}>
@@ -481,10 +501,12 @@ export default function AgendaScreen() {
         {/* evento nuevo */}
         <View style={s.newRow}>
           <Text style={[s.sectionTitle, { color: W.ink }]}>Evento nuevo</Text>
-          <Pressable accessibilityLabel="Crear evento nuevo" onPress={() => openForm()} style={[s.plus, { backgroundColor: W.sq }]}>
-            <Icono src={ICONOS.mas} size={20} tint={K.evIcoTx} />
+            <Pressable accessibilityLabel="Crear evento nuevo" onPress={() => openForm()} hitSlop={8}>
+            <Icono src={ICONOS.mas} size={28} />
           </Pressable>
         </View>
+        </View>
+      </View>
       </ScrollView>
 
       {/* hoja: evento nuevo */}

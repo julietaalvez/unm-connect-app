@@ -283,23 +283,6 @@ export default function InicioProfesor() {
               </View>
               <Text style={s.libresNum}>{libres}</Text>
             </View>
-
-            <Text style={s.quickTitle}>Novedades</Text>
-            {novedadesUni.length === 0 ? (
-              <View style={s.bloque}>
-                <Text style={s.bloqueSub}>No hay novedades por ahora.</Text>
-              </View>
-            ) : (
-              novedadesUni.slice(0, 5).map((n) => (
-                <View key={n.id} style={s.bloque}>
-                  <Image source={ICONO_TIPO[n.tipo]} style={s.avisoIc} resizeMode="contain" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.avisoTitulo}>{n.titulo}</Text>
-                    {!!n.texto && <Text style={s.bloqueSub}>{n.texto}</Text>}
-                  </View>
-                </View>
-              ))
-            )}
           </View>
         </View>
 

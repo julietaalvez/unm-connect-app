@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useNovedades, type NovedadUsuario } from '../lib/novedades';
 import { useTema } from '../lib/tema';
@@ -12,6 +12,7 @@ const ICONO = {
 };
 const ETIQUETA = { aula: 'Cambio de aula', evento: 'Evento', aviso: 'Aviso' };
 const ATRAS = require('../../assets/icons/atras.png');
+const PAPELERA = require('../../assets/icons/papelera.png');
 
 const F = {
   h2: 'Montserrat_800ExtraBold',
@@ -30,7 +31,7 @@ export default function NotificacionesScreen({ alCerrar }: { alCerrar: () => voi
   const { C } = useTema();
   const { W } = useWf();
   const s = useMemo(() => makeStyles(W), [W]);
-  const { lista, cargado, sinLeer, recargar, leerTodas } = useNovedades();
+  const { lista, cargado, sinLeer, recargar, leerTodas, borrar, borrarTodas } = useNovedades();
 
   // al abrir se actualiza la lista; al cerrar (por el botón o por "atrás") todo queda como leído
   useEffect(() => {
@@ -51,7 +52,12 @@ export default function NotificacionesScreen({ alCerrar }: { alCerrar: () => voi
         <Text style={s.texto}>{n.texto}</Text>
         {!!n.materia && <Text style={s.materia}>{n.materia}</Text>}
       </View>
-      {!n.leida && <View style={s.punto} />}
+      <View style={{ alignItems: 'center', gap: 10 }}>
+        {!n.leida && <View style={s.punto} />}
+        <Pressable onPress={() => borrar(n.id)} hitSlop={10} accessibilityLabel="Borrar notificación">
+          <Image source={PAPELERA} style={s.papelera} resizeMode="contain" />
+        </Pressable>
+      </View>
     </View>
   );
 
@@ -66,7 +72,20 @@ export default function NotificacionesScreen({ alCerrar }: { alCerrar: () => voi
           <View style={{ width: 26 }} />
         </View>
 
-        {sinLeer > 0 && <Text style={s.resumen}>{sinLeer === 1 ? '1 nueva' : `${sinLeer} nuevas`}</Text>}
+          {sinLeer > 0 && <Text style={s.resumen}>{sinLeer === 1 ? '1 nueva' : `${sinLeer} nuevas`}</Text>}
+
+        {lista.length > 0 && (
+          <Pressable
+            onPress={() =>
+              Alert.alert('Borrar notificaciones', '¿Querés borrar todas tus notificaciones?', [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Borrar todas', style: 'destructive', onPress: borrarTodas },
+              ])
+            }
+          >
+            <Text style={s.borrarTodas}>BORRAR TODAS</Text>
+          </Pressable>
+        )}
 
         {!cargado ? (
           <Text style={s.vacio}>Cargando…</Text>
@@ -97,5 +116,7 @@ const makeStyles = (W: Wf) =>
     titulo: { fontFamily: F.semi, fontSize: 13.5, color: W.ink, marginTop: 2 },
     texto: { fontFamily: F.body, fontSize: 12.5, lineHeight: 18, color: W.ink, marginTop: 2 },
     materia: { fontFamily: F.bodyMed, fontSize: 11, color: W.meta, marginTop: 6 },
-    punto: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#e03131', marginTop: 4 },
+       punto: { width: 9, height: 9, borderRadius: 5, backgroundColor: '#e03131', marginTop: 4 },
+    papelera: { width: 17, height: 17, opacity: 0.7 },
+    borrarTodas: { fontFamily: F.bodyMed, fontSize: 11.5, color: W.meta, textAlign: 'right' },
   });

@@ -75,6 +75,31 @@ async function marcarLeidas(id: number) {
     // si falla, la próxima vez que se carguen vuelven a figurar sin leer
   }
 }
+async function ocultar(id: number, ids: number[]) {
+  if (ids.length === 0) return;
+  poner({ ...estado, lista: estado.lista.filter((n) => !ids.includes(n.id)) });
+  try {
+    await fetch(`${API_URL}/usuarios/${id}/novedades/ocultar`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+  } catch {
+    // si falla, vuelve a aparecer la próxima vez que se cargue la lista
+  }
+}
+async function marcarUna(id: number, novedadId: number) {
+  poner({ ...estado, lista: estado.lista.map((n) => (n.id === novedadId ? { ...n, leida: true } : n)) });
+  try {
+    await fetch(`${API_URL}/usuarios/${id}/novedades/leer`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids: [novedadId] }),
+    });
+  } catch {
+    // si falla, vuelve a aparecer la próxima vez que se cargue
+  }
+}
 
 /** Novedades del usuario: lista, cantidad sin leer, y acciones */
 export function useNovedades() {
@@ -91,6 +116,15 @@ export function useNovedades() {
     sinLeer: e.lista.filter((n) => !n.leida).length,
     recargar: () => {
       if (id) cargarNovedades(id);
+    },
+        borrar: (nid: number) => {
+      if (id) ocultar(id, [nid]);
+    },
+    borrarTodas: () => {
+      if (id) ocultar(id, estado.lista.map((n) => n.id));
+    },
+    leerUna: (nid: number) => {
+      if (id) marcarUna(id, nid);
     },
     leerTodas: () => {
       if (id) marcarLeidas(id);

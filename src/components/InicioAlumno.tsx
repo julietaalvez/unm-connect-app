@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
+import AlertaImportante from '../components/AlertaImportante';
 import HeaderMapa from '../components/HeaderMapa';
 import MisNotas from '../components/MisNotas';
 import NotificacionesScreen from '../components/NotificacionesScreen';
@@ -254,22 +255,7 @@ export default function InicioAlumno() {
               <Text style={s.libresNum}>{libres}</Text>
             </View>
 
-            <Text style={s.quickTitle}>Novedades</Text>
-            {novedades.length === 0 ? (
-              <View style={s.bloque}>
-                <Text style={s.bloqueSub}>No hay novedades por ahora.</Text>
-              </View>
-            ) : (
-              novedades.slice(0, 5).map((n) => (
-                <View key={n.id} style={s.bloque}>
-                  <Image source={ICONO_TIPO[n.tipo]} style={s.avisoIc} resizeMode="contain" />
-                  <View style={{ flex: 1 }}>
-                    <Text style={s.avisoTitulo}>{n.titulo}</Text>
-                    {!!n.texto && <Text style={s.bloqueSub}>{n.texto}</Text>}
-                  </View>
-                </View>
-              ))
-            )}
+           
           </View>
         </View>
 
@@ -279,6 +265,7 @@ export default function InicioAlumno() {
         )}
       </View>
 
+            <AlertaImportante />
       <Modal visible={verProfes} animationType="slide" statusBarTranslucent onRequestClose={() => setVerProfes(false)}>
         <ProfesoresScreen alCerrar={() => setVerProfes(false)} />
       </Modal>
