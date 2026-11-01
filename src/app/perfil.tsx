@@ -57,8 +57,8 @@ const ROL: Record<string, string> = {
 };
 
 // Un icono PNG con tamaño fijo
-const Icono = ({ src, size = 22 }: { src: number; size?: number }) => (
-  <Image source={src} style={{ width: size, height: size }} resizeMode="contain" />
+const Icono = ({ src, size = 22, tint }: { src: number; size?: number; tint?: string }) => (
+  <Image source={src} style={[{ width: size, height: size }, tint ? { tintColor: tint } : null]} resizeMode="contain" />
 );
 
 export default function PerfilScreen() {
@@ -113,10 +113,10 @@ export default function PerfilScreen() {
     setVerAlumnos(true);
   };
 
-  const Fila = ({ icono, texto, onPress, abierto }: { icono: number; texto: string; onPress: () => void; abierto?: boolean }) => (
+  const Fila = ({ icono, texto, onPress, abierto, tint }: { icono: number; texto: string; onPress: () => void; abierto?: boolean; tint?: string }) => (
     <Pressable style={({ pressed }) => [s.fila, pressed && { transform: [{ scale: 0.99 }] }]} onPress={onPress}>
       <View style={s.filaIco}>
-        <Icono src={icono} />
+             <Icono src={icono} tint={tint} />
       </View>
       <Text style={s.filaTxt}>{texto}</Text>
       <View style={abierto ? { transform: [{ rotate: '90deg' }] } : undefined}>
@@ -165,7 +165,7 @@ export default function PerfilScreen() {
         {abMaterias && (
           <View style={s.sub}>
             <View style={s.matCard}>
-              <Text style={s.matB}>Mis carreras</Text>
+             <Text style={s.matB}>{esProfesor ? 'Mis materias' : 'Mis carreras'}</Text>
               <Text style={s.matC}>Al buscar materias solo vas a ver las de las carreras que elijas.</Text>
               <View style={s.chips}>
                 {carreras.map((c) => {
@@ -240,7 +240,7 @@ export default function PerfilScreen() {
 
         {/* alumnos: la planilla de progreso es para estudiantes; el docente ve quién se anotó en sus comisiones */}
         {esProfesor ? (
-          <Fila icono={ICONOS.profesores} texto="Alumnos de mis comisiones" onPress={abrirAlumnos} />
+         <Fila icono={ICONOS.profesores} tint="#4B90F8" texto="Alumnos de mis comisiones" onPress={abrirAlumnos} />
         ) : (
           <Fila icono={ICONOS.materias} texto="Planilla de mi carrera" onPress={() => setVerPlanilla(true)} />
         )}

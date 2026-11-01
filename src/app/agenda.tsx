@@ -324,11 +324,17 @@ export default function AgendaScreen() {
 
   return (
     <View style={[s.screen, { backgroundColor: C.bg }]}>
-      <HeaderMapa />
-      <Text style={[s.h1, { color: W.ink }]}>AGENDA</Text>
+        {!horizontal && <HeaderMapa />}
+      {!horizontal && <Text style={[s.h1, { color: W.ink }]}>AGENDA</Text>}
 
       <ScrollView contentContainerStyle={{ paddingHorizontal: 18, paddingBottom: 140 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-               <View style={horizontal ? { flexDirection: 'row', gap: 16, alignItems: 'flex-start' } : undefined}>
+               {horizontal && (
+          <View style={{ marginHorizontal: -18 }}>
+            <HeaderMapa />
+            <Text style={[s.h1, { color: W.ink }]}>AGENDA</Text>
+          </View>
+        )}
+        <View style={horizontal ? { flexDirection: 'row', gap: 16, alignItems: 'flex-start' } : undefined}>
         <View style={horizontal ? { flex: 1 } : undefined}>
         {/* calendario */}
         <View style={[s.cal, { backgroundColor: W.card }]}>

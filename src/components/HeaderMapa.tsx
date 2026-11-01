@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useRef, useState } from 'react';
+import { Image, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle, Line, Path } from 'react-native-svg';
 import { useTema } from '../lib/tema';
@@ -10,8 +10,10 @@ const LOGO_OSCURO = require('../../assets/images/unm-logo-dark.png');
 /** Barra de arriba: (flecha opcional) + logo UNM Connect + botón de modo oscuro */
 export default function HeaderMapa({ onBack }: { onBack?: () => void }) {
   const { modo, C, alternar } = useTema();
-  const insets = useSafeAreaInsets();
-  const boton = { backgroundColor: C.btnBg, borderColor: C.btnBorder };
+   const insets = useSafeAreaInsets();
+  const { width, height } = useWindowDimensions();
+  const bajo = width > height; // celu acostado
+   const boton = { backgroundColor: C.btnBg, borderColor: C.btnBorder, ...(bajo ? { width: 32, height: 32, borderRadius: 16 } : null) };
 
   const ref = useRef<View>(null);
   const [extraTop, setExtraTop] = useState<number | null>(null); // null = todavía no midió
@@ -31,7 +33,7 @@ export default function HeaderMapa({ onBack }: { onBack?: () => void }) {
       ref={ref}
       collapsable={false}
       onLayout={medir}
-      style={[s.row, { paddingTop: (extraTop ?? 0) + 8, opacity: extraTop === null ? 0 : 1 }]}
+           style={[s.row, { paddingTop: (bajo ? 0 : (extraTop ?? 0)) + (bajo ? 2 : 8), opacity: extraTop === null ? 0 : 1 }, bajo && { paddingBottom: 2 }]}
     >
       {onBack && (
         <Pressable onPress={onBack} style={[s.btn, boton]} accessibilityLabel="Volver al campus">
@@ -40,7 +42,7 @@ export default function HeaderMapa({ onBack }: { onBack?: () => void }) {
       )}
 
       {/* El logo queda a la izquierda y se achica solo si falta lugar */}
-      <View style={s.logoBox}>
+           <View style={[s.logoBox, bajo && { height: 26 }]}>
         <Image source={modo === 'dark' ? LOGO_OSCURO : LOGO_CLARO} style={s.logo} resizeMode="contain" />
       </View>
 

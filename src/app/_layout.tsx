@@ -6,7 +6,9 @@ import { Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-googl
 import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
+import { StatusBar } from 'expo-status-bar';
 import { useEffect, useState } from 'react';
+import { useWindowDimensions } from 'react-native';
 import DniScreen from '../components/dni';
 import ElegirMaterias from '../components/ElegirMaterias';
 import { registrarCierre, usuarioActual } from '../lib/sesion';
@@ -18,7 +20,8 @@ SplashScreen.preventAutoHideAsync();
 type Vista = 'login' | 'registro' | 'dni' | 'materias' | 'app';
 
 function Layout() {
-  const { theme } = useAppTheme();
+    const { theme } = useAppTheme();
+  const { width: anchoPantalla, height: altoPantalla } = useWindowDimensions();
   const [vista, setVista] = useState<Vista>('login');
   // Se marca al crear una cuenta; el próximo alumno que inicie sesión pasa por "¿Qué materias cursás?"
   const [recienRegistrado, setRecienRegistrado] = useState(false);
@@ -70,6 +73,7 @@ function Layout() {
 
   return (
     <ThemeProvider value={theme === 'dark' ? DarkTheme : DefaultTheme}>
+            <StatusBar hidden={anchoPantalla > altoPantalla} />
       <AnimatedSplashOverlay />
       {vista === 'app' && <AppTabs />}
       {vista === 'dni' && <DniScreen onListo={seguirDespuesDelDni} />}

@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -9,6 +10,8 @@ import {
   View,
 } from 'react-native';
 import { MiNota, obtenerMisNotas } from '../lib/notas';
+
+const ATRAS = require('../../assets/icons/atras.png');
 
 type Props = { usuarioId: number; alCerrar?: () => void };
 
@@ -38,8 +41,8 @@ export default function MisNotas({ usuarioId, alCerrar }: Props) {
         contentContainerStyle={s.cont}
         refreshControl={<RefreshControl refreshing={false} onRefresh={cargar} />}>
         {alCerrar && (
-          <TouchableOpacity onPress={alCerrar}>
-            <Text style={s.volver}>‹ Volver</Text>
+                  <TouchableOpacity onPress={alCerrar} hitSlop={10} accessibilityLabel="Volver" style={s.volverBtn}>
+            <Image source={ATRAS} style={{ width: 26, height: 26 }} resizeMode="contain" />
           </TouchableOpacity>
         )}
         <Text style={s.h1}>Mis notas</Text>
@@ -67,7 +70,8 @@ export default function MisNotas({ usuarioId, alCerrar }: Props) {
 const s = StyleSheet.create({
   raiz: { flex: 1, backgroundColor: '#fff' },
   cont: { padding: 20, paddingBottom: 60 },
-  volver: { fontSize: 16, color: '#1e5aa8', marginBottom: 8 },
+   volverBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, alignSelf: 'flex-start' },
+  volver: { fontSize: 16, color: '#1e5aa8' },
   h1: { fontSize: 22, fontWeight: '700', marginBottom: 12, color: '#111' },
   vacio: { color: '#666', marginTop: 8 },
   error: { color: '#b00020', marginTop: 12 },

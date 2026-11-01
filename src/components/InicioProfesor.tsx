@@ -239,7 +239,7 @@ export default function InicioProfesor() {
             <Text style={[s.quickTitle, ancho && { marginTop: 0 }]}>Accesos rápidos</Text>
             <View style={[s.quick, { flexWrap: 'wrap', rowGap: 12 }, ancho && { justifyContent: 'flex-start' }]}>
               <Pressable style={s.qbtn} onPress={() => setVerNotifs(true)}>
-                <Image source={IC.novedades} style={s.qIc} resizeMode="contain" />
+                  <Image source={IC.novedades} style={s.qIcNavy} resizeMode="contain" />
                 <Text style={s.qTxt}>Novedades</Text>
               </Pressable>
               <Pressable

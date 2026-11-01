@@ -1,13 +1,17 @@
 import { useTema } from '@/lib/tema';
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
+import { useWindowDimensions } from 'react-native';
 
 export default function AppTabs() {
   const { C, modo } = useTema();
-  const celeste = modo === 'dark' ? '#6FA8FF' : '#2F6FE0';
+    const celeste = modo === 'dark' ? '#6FA8FF' : '#2F6FE0';
+  const { width, height } = useWindowDimensions();
+  const horizontal = width > height;
 
   return (
     <NativeTabs
-      key={modo}
+       key={modo}
+      labelVisibilityMode={horizontal ? 'unlabeled' : 'auto'}
       backgroundColor={C.bg}
       indicatorColor={C.panel2}
       iconColor={{ default: celeste, selected: celeste }}
