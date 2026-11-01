@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,8 +17,8 @@ import {
   ESTADOS,
   Estado,
   Evaluacion,
-  actualizarEvaluacion,
   aIsoUtc,
+  actualizarEvaluacion,
   borrarEvaluacion,
   crearEvaluacion,
   fechaAR,
@@ -41,6 +42,7 @@ function useEstilos() {
   const s = useMemo(() => makeStyles(C, oscuro), [C, oscuro]);
   return { C, s, oscuro };
 }
+const ATRAS = require('../../assets/icons/atras.png');
 
 /** Barra de arriba: "Volver" a la izquierda y el botón de modo claro/oscuro a la derecha */
 function Barra({ onVolver }: { onVolver?: () => void }) {
@@ -48,8 +50,8 @@ function Barra({ onVolver }: { onVolver?: () => void }) {
   return (
     <View style={s.barra}>
       {onVolver ? (
-        <TouchableOpacity onPress={onVolver} accessibilityLabel="Volver">
-          <Text style={s.volver}>‹ Volver</Text>
+        <TouchableOpacity onPress={onVolver} hitSlop={10} accessibilityLabel="Volver" style={s.volverBtn}>
+          <Image source={ATRAS} style={{ width: 26, height: 26 }} resizeMode="contain" />
         </TouchableOpacity>
       ) : (
         <View />
@@ -569,6 +571,7 @@ const makeStyles = (C: Colores, oscuro: boolean) => {
     raiz: { flex: 1, backgroundColor: C.bg },
     cont: { padding: 20, paddingBottom: 60 },
     barra: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+        volverBtn: { flexDirection: 'row', alignItems: 'center', gap: 6 },
     volver: { fontSize: 16, color: C.pillTypeText },
     h1: { fontSize: 22, fontWeight: '700', marginBottom: 8, color: C.text },
     label: { fontSize: 14, fontWeight: '600', marginTop: 16, marginBottom: 6, color: C.text },

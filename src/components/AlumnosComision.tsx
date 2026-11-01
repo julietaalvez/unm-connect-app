@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+
+const ATRAS = require('../../assets/icons/atras.png');
 
 import { ComisionConAlumnos, obtenerAlumnosPorComision } from '../lib/avisos';
 import { useTema } from '../lib/tema';
@@ -60,7 +62,8 @@ export default function AlumnosComision({ usuarioId, alCerrar }: Props) {
   return (
     <View style={[s.screen, { backgroundColor: C.bg }]}>
       <Pressable onPress={alCerrar} accessibilityLabel="Volver" style={s.volverBtn}>
-        <Text style={s.volver}>‹ Volver</Text>
+        <Image source={ATRAS} style={{ width: 26, height: 26 }} resizeMode="contain" />
+        <Text style={s.volver}>Volver</Text>
       </Pressable>
       <Text style={s.h1}>Alumnos de mis comisiones</Text>
       {!cargando && !error && (
@@ -130,7 +133,7 @@ export default function AlumnosComision({ usuarioId, alCerrar }: Props) {
 const makeStyles = (W: Wf) =>
   StyleSheet.create({
     screen: { flex: 1 },
-    volverBtn: { paddingHorizontal: 18, paddingVertical: 8, alignSelf: 'flex-start' },
+      volverBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 18, paddingVertical: 8, alignSelf: 'flex-start' },
     volver: { fontFamily: F.bodyMed, fontSize: 15, color: W.navy },
     h1: { fontFamily: F.h1, fontSize: 20, color: W.ink, paddingHorizontal: 18 },
     sub: { fontFamily: F.body, fontSize: 12.5, color: W.meta, paddingHorizontal: 18, marginTop: 2, marginBottom: 12 },

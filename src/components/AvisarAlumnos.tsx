@@ -1,9 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, ScrollView,
-  ActivityIndicator, Alert, StyleSheet,
+  ActivityIndicator, Alert,
+  Image,
+  ScrollView,
+  StyleSheet,
+  Text, TextInput, TouchableOpacity
 } from 'react-native';
-import { ComisionDocente, claveDe, obtenerComisiones, enviarAviso } from '../lib/avisos';
+import { ComisionDocente, claveDe, enviarAviso, obtenerComisiones } from '../lib/avisos';
+
+const ATRAS = require('../../assets/icons/atras.png');
 
 type Props = {
   usuarioId: number;
@@ -73,8 +78,8 @@ export default function AvisarAlumnos({ usuarioId, onVolver }: Props) {
   return (
     <ScrollView contentContainerStyle={s.cont} keyboardShouldPersistTaps="handled">
       {onVolver && (
-        <TouchableOpacity onPress={onVolver}>
-          <Text style={s.volver}>‹ Volver</Text>
+          <TouchableOpacity onPress={onVolver} hitSlop={10} accessibilityLabel="Volver" style={s.volverBtn}>
+          <Image source={ATRAS} style={{ width: 26, height: 26 }} resizeMode="contain" />
         </TouchableOpacity>
       )}
       <Text style={s.h1}>Avisar a mis alumnos</Text>
@@ -136,7 +141,8 @@ export default function AvisarAlumnos({ usuarioId, onVolver }: Props) {
 
 const s = StyleSheet.create({
   cont: { padding: 20, paddingBottom: 60 },
-  volver: { fontSize: 16, color: '#1e5aa8', marginBottom: 8 },
+    volverBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8, alignSelf: 'flex-start' },
+  volver: { fontSize: 16, color: '#1e5aa8' },
   h1: { fontSize: 22, fontWeight: '700', marginBottom: 16 },
   label: { fontSize: 14, fontWeight: '600', marginTop: 16, marginBottom: 6 },
   vacio: { color: '#666' },

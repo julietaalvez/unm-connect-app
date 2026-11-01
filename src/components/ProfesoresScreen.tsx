@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import Svg, { Circle, Line, Path, Polyline } from 'react-native-svg';
 import { FUENTE, PROFES } from '../data/profes';
 import { cargarProfesores } from '../lib/api';
@@ -119,9 +119,7 @@ export default function ProfesoresScreen({ alCerrar }: { alCerrar: () => void })
         {/* título + volver */}
         <View style={s.pageHead}>
           <Pressable style={s.back} accessibilityLabel="Volver al inicio" onPress={alCerrar}>
-            <Svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke={C.text} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round">
-              <Polyline points="15 18 9 12 15 6" />
-            </Svg>
+           <Image source={require('../../assets/icons/atras.png')} style={{ width: 22, height: 22 }} resizeMode="contain" />
           </Pressable>
           <Text style={s.h1}>¿Y mi profe?</Text>
         </View>
