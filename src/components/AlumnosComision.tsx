@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ActivityIndicator, Alert, Image, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 
 const ATRAS = require('../../assets/icons/atras.png');
 
-import { ComisionConAlumnos, obtenerAlumnosPorComision } from '../lib/avisos';
+import { ComisionConAlumnos, guardarNotaFinal, obtenerAlumnosPorComision } from '../lib/avisos';
 import { useTema } from '../lib/tema';
 import { Wf, useWf } from '../lib/wf';
 import { F } from './InicioAlumno';
@@ -20,7 +20,48 @@ const fechaCorta = (v: string | null) => {
   const d = new Date(v);
   return isNaN(d.getTime()) ? '' : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
 };
+function NotaFinal({ valor, onGuardar, W }: { valor?: number | null; onGuardar: (t: string) => Promise<void>; W: Wf }) {
+  const base = valor != null ? String(valor) : '';
+  const [txt, setTxt] = useState(base);
+  const guardada = useRef(base);
+  const [estado, setEstado] = useState<'' | 'ok' | 'error'>('');
+  const guardando = useRef(false);
+  async function confirmar() {
+    const limpio = txt.trim().replace(',', '.');
+    if (limpio === guardada.current || guardando.current) return;
+    guardando.current = true;
+    try {
+      await onGuardar(limpio);
+      guardada.current = limpio;
+      setEstado('ok');
+    } catch (e: any) {
+      setEstado('error');
+      Alert.alert('No se pudo guardar', e?.message || 'Probá de nuevo.');
+    } finally {
+      guardando.current = false;
+    }
+  }
 
+  return (
+    <View style={{ alignItems: 'center' }}>
+      <Text style={{ fontSize: 9.5, color: W.meta }}>Nota final</Text>
+      <TextInput
+        value={txt}
+        onChangeText={(t) => { setTxt(t.replace(/[^0-9.,]/g, '').slice(0, 4)); setEstado(''); }}
+        onEndEditing={confirmar}
+        keyboardType="decimal-pad"
+        placeholder="–"
+        placeholderTextColor={W.meta}
+        maxLength={4}
+        style={{
+          width: 54, height: 32, textAlign: 'center', fontSize: 14, fontWeight: '700', color: W.ink, padding: 0,
+          borderWidth: 1.5, borderRadius: 8, backgroundColor: W.card,
+          borderColor: estado === 'error' ? '#b00020' : estado === 'ok' ? '#2e9e6b' : W.meta,
+        }}
+      />
+    </View>
+  );
+}
 export default function AlumnosComision({ usuarioId, alCerrar }: Props) {
   const { C } = useTema();
   const { W } = useWf();
@@ -65,7 +106,7 @@ export default function AlumnosComision({ usuarioId, alCerrar }: Props) {
         <Image source={ATRAS} style={{ width: 26, height: 26 }} resizeMode="contain" />
         <Text style={s.volver}>Volver</Text>
       </Pressable>
-      <Text style={s.h1}>Alumnos de mis comisiones</Text>
+      <Text style={s.h1}>Alumnos y nota final</Text>
       {!cargando && !error && (
         <Text style={s.sub}>{`${total} alumno${total === 1 ? '' : 's'} en la app`}</Text>
       )}
@@ -116,8 +157,11 @@ export default function AlumnosComision({ usuarioId, alCerrar }: Props) {
                   ) : (
                     c.alumnos.map((a) => (
                       <View key={a.id} style={s.alumno}>
-                        <Text style={s.alumnoNombre}>{a.nombre}</Text>
-                        {!!fechaCorta(a.desde) && <Text style={s.alumnoFecha}>{`Se anotó el ${fechaCorta(a.desde)}`}</Text>}
+                                                <View style={{ flex: 1 }}>
+                          <Text style={s.alumnoNombre}>{a.nombre}</Text>
+                          {!!fechaCorta(a.desde) && <Text style={s.alumnoFecha}>{`Se anotó el ${fechaCorta(a.desde)}`}</Text>}
+                        </View>
+                        <NotaFinal valor={a.final} W={W} onGuardar={(t) => guardarNotaFinal(usuarioId, c.materia, a.id, t)} />
                       </View>
                     ))
                   ))}

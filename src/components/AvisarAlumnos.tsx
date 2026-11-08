@@ -4,7 +4,8 @@ import {
   Image,
   ScrollView,
   StyleSheet,
-  Text, TextInput, TouchableOpacity
+  Text, TextInput, TouchableOpacity,
+  View,
 } from 'react-native';
 import { ComisionDocente, claveDe, enviarAviso, obtenerComisiones } from '../lib/avisos';
 
@@ -19,6 +20,7 @@ export default function AvisarAlumnos({ usuarioId, onVolver }: Props) {
   const [comisiones, setComisiones] = useState<ComisionDocente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState('');
+    const [esAula, setEsAula] = useState(false);
   const [elegidas, setElegidas] = useState<Set<string>>(new Set());
   const [titulo, setTitulo] = useState('');
   const [texto, setTexto] = useState('');
@@ -59,7 +61,7 @@ export default function AvisarAlumnos({ usuarioId, onVolver }: Props) {
   const enviar = async () => {
     setEnviando(true);
     try {
-      await enviarAviso(usuarioId, [...elegidas], titulo.trim(), texto.trim());
+            await enviarAviso(usuarioId, [...elegidas], titulo.trim(), texto.trim(), esAula ? 'aula' : 'aviso');
       Alert.alert('Aviso enviado', 'Tus alumnos ya pueden verlo en Novedades.');
       setTitulo('');
       setTexto('');
@@ -106,6 +108,17 @@ export default function AvisarAlumnos({ usuarioId, onVolver }: Props) {
           </TouchableOpacity>
         );
       })}
+
+            <Text style={s.label}>Tipo de aviso</Text>
+      <View style={{ flexDirection: 'row', gap: 8 }}>
+        <TouchableOpacity style={[s.chip, !esAula && s.chipActivo, { flex: 1 }]} onPress={() => setEsAula(false)}>
+          <Text style={[s.chipTitulo, !esAula && s.chipTextoActivo]}>Aviso común</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={[s.chip, esAula && s.chipActivo, { flex: 1 }]} onPress={() => setEsAula(true)}>
+          <Text style={[s.chipTitulo, esAula && s.chipTextoActivo]}>Cambio de aula</Text>
+          <Text style={[s.chipSub, esAula && s.chipTextoActivo]}>Sale como cartel al abrir la app</Text>
+        </TouchableOpacity>
+      </View>
 
       <Text style={s.label}>Título</Text>
       <TextInput

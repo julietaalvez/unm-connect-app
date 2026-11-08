@@ -4,6 +4,7 @@
 import { grafoDesdeCorredores } from '../lib/corredores';
 import { CORREDORES } from './corredores';
 import { HISTORICO, NOTAS_HISTORICO } from './historico';
+import { EXT_EDGES, EXT_NODES } from './historicoExterior';
 
 export type Punto = { id: string; label: string; x: number; y: number; selectable?: boolean };
 export type Forma = { id: string; d: string; cx: number; cy: number; x: number; y: number; w: number; h: number };
@@ -146,4 +147,11 @@ for (const [idEd, pisos] of Object.entries(CORREDORES)) {
   for (const [piso, c] of Object.entries(pisos)) {
     EDIFICIOS[idEd].graph[piso] = grafoDesdeCorredores(EDIFICIOS[idEd].graph[piso], c);
   }
+}
+// Histórico: senderos exteriores y las puertas que los conectan con el edificio
+// (incluye la salida al patio por la oficina B003, entre el Buffet y el pasillo principal)
+{
+  const g = EDIFICIOS['edificio-historico'].graph['Planta Baja'];
+  Object.assign(g.nodes, EXT_NODES);
+  g.edges.push(...EXT_EDGES);
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "419076825869",
+    "project_id": "unm-connect",
+    "storage_bucket": "unm-connect.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:419076825869:android:9ff0cc8a00e58fcae8c644",
+        "android_client_info": {
+          "package_name": "com.unmconnect.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBmtrexZ-qAXyM9iF1WZHawSr0_eo_wE5g"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

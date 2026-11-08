@@ -7,6 +7,7 @@ import HeaderMapa from '../components/HeaderMapa';
 import { cargarProfesores } from '../lib/api';
 import type { Cursada } from '../lib/inscripciones';
 import { armarCursadas, FERIADOS, useCatalogo, useInscripciones } from '../lib/inscripciones';
+import { programarRecordatorios } from '../lib/recordatorios';
 import { usuarioActual } from '../lib/sesion';
 import { useTema } from '../lib/tema';
 import { useWf } from '../lib/wf';
@@ -233,6 +234,10 @@ export default function AgendaScreen() {
     [eventosMaterias, customEvents]
   );
   const eventDates = useMemo(() => new Set(allEvents.map((e) => e.date)), [allEvents]);
+    // deja programados los recordatorios de las próximas semanas
+   useEffect(() => {
+    if (cargadoDe === uid) programarRecordatorios(allEvents);
+  }, [allEvents, cargadoDe, uid]);
   const eventColorsByDate = useMemo(() => {
     const result = new Map<string, string[]>();
     for (const ev of allEvents) {

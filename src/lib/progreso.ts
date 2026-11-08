@@ -8,7 +8,7 @@ import { usuarioActual } from './sesion';
    Por ahora se guarda en el celu (AsyncStorage). Una materia "pendiente" simplemente no tiene registro. */
 
 export type Estado = 'cursando' | 'aprobada';
-export type Registro = { estado: Estado; nota?: number };
+export type Registro = { estado: Estado; nota?: number; final?: boolean };
 export type Progreso = Record<string, Registro>; // clave = nombre de la materia
 
 /** "7", "7,5" o "7.5" -> número entre 1 y 10; cualquier otra cosa -> undefined */
@@ -97,6 +97,7 @@ export function useProgreso() {
   /** Pendiente -> En curso -> Aprobada -> Pendiente */
   const ciclar = useCallback(
     (materia: string) => {
+            if (datos[materia]?.final) return; // la nota final la puso el docente
       const nuevo = { ...datos };
       const actual = datos[materia]?.estado;
       if (!actual) nuevo[materia] = { estado: 'cursando' };
@@ -110,7 +111,7 @@ export function useProgreso() {
   const ponerNota = useCallback(
     (materia: string, texto: string) => {
       const reg = datos[materia];
-      if (!reg || reg.estado !== 'aprobada') return;
+           if (!reg || reg.estado !== 'aprobada' || reg.final) return;
       guardar({ ...datos, [materia]: { estado: 'aprobada', nota: parsearNota(texto) } });
     },
     [datos, guardar]

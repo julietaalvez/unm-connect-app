@@ -1,20 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
-import Svg, { Circle, Ellipse, Path, Polygon, Text as SvgText } from 'react-native-svg';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Image, Keyboard, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from 'react-native';
+import Svg, { Circle, G, Path, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 
 import { Building, BUILDINGS, FIELD, GATES, PATH_D, PATH_POLYGONS, ROADS_D } from '../data/campus';
 import { EDIFICIOS_CON_INTERIOR } from '../data/edificios';
 import { fotoDeEdificio } from '../data/fotosEdificios';
+import { TRANSFORMS } from '../data/unificado';
 import { MapaVista, useMapaGestos } from '../lib/MapaZoom';
 import { buscarEnTodos } from '../lib/buscadorGlobal';
 import { aSvg, puertaMasCercana } from '../lib/calibracion';
-import { GATE_LABELS, PuertaCampus, rutaCampus } from '../lib/campusRuta';
+import { entradaInterior, GATE_LABELS, ORIGENES, rutaCampus } from '../lib/campusRuta';
 import { esOscuro, mezclar } from '../lib/colores';
 import { Paso, rutaToPath } from '../lib/interior';
+import { rutaGeneral } from '../lib/rutaGeneral';
 import { Colores, useTema } from '../lib/tema';
 import { useUbicacion } from '../lib/ubicacion';
 import HeaderMapa from './HeaderMapa';
 import IconoUI from './IconoUI';
+import type { LugarInterior } from './InterioresCampus';
+import { InterioresCampus, SelectorPiso, ZOOM_INTERIORES } from './InterioresCampus';
 import { BarraSuperior, BotonesZoom, Chip, FilaChips, Hoja, subeBotones, useTeclado } from './MapaUI';
 
 // Recuadro del mapa nuevo: entra TODO el campus
@@ -22,9 +26,10 @@ const VB_X = -15;
 const VB_Y = 25;
 const VB_W = 930;
 const VB_H = 785;
-const ZOOM_MAX = 6;
+const ZOOM_MAX = 4;
 const ZOOM_INICIAL = 1.3;
 const ARRIBA = 120; // lo que tapan el buscador y el chip de arriba
+const YO = '__yo__'; // "Mi ubicación" (GPS)
 
 const FOTO_CAMPUS = require('../../assets/images/campus-foto.jpg');
 
@@ -79,22 +84,30 @@ function Cartel({ C, x, y, size, weight = '700', rotation, origin, children }: a
     </>
   );
 }
+type Lugar = { clave: string; label: string; sub?: string; edificio?: string; destino?: { floor: string; id: string }; punto?: { x: number; y: number } };
+type Props = { onEnterBuilding?: (id: string, destino?: { floor: string; id: string }, entrada?: string) => void; activo?: boolean;};
+type RutaState = { points: { x: number; y: number }[]; pasos: Paso[]; puerta?: string } | null;
 
-type Props = { onEnterBuilding?: (id: string, destino?: { floor: string; id: string }) => void };
-type RutaState = { points: { x: number; y: number }[]; pasos: Paso[] } | null;
-
-export default function CampusMap({ onEnterBuilding }: Props) {
+export default function CampusMap({ onEnterBuilding, activo = true }: Props) {
   const { C } = useTema();
   const s = useMemo(() => makeStyles(C), [C]);
   const { width, height: winH } = useWindowDimensions();
 
   const [selected, setSelected] = useState<Building | null>(null);
-  const [origen, setOrigen] = useState<PuertaCampus>('mitre');
+  const [origen, setOrigen] = useState<string>('entrada-mitre');
   const [whereOpen, setWhereOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [listaAbierta, setListaAbierta] = useState(false);
   const [ruta, setRuta] = useState<RutaState>(null);
   const [errorRuta, setErrorRuta] = useState<string | null>(null);
+    // barra "Desde / Hasta"
+  const [modoRuta, setModoRuta] = useState(false);
+  const [desdeTxt, setDesdeTxt] = useState('');
+  const [hastaTxt, setHastaTxt] = useState('');
+  const [campo, setCampo] = useState<'desde' | 'hasta' | null>(null);
+  const [desde, setDesde] = useState<Lugar | null>(null);
+  const [hasta, setHasta] = useState<Lugar | null>(null);
+    const [elegirEn, setElegirEn] = useState<'desde' | 'hasta' | null>(null);
 
   const oscuro = esOscuro(C.bg);
   const VERDE = oscuro ? mezclar(C.field, C.mapBg, 0.3) : mezclar(C.field, '#ffffff', 0.5); // verde más suave
@@ -112,17 +125,37 @@ export default function CampusMap({ onEnterBuilding }: Props) {
   const baseH = (cardW * VB_H) / VB_W;
   const m = useMapaGestos(ZOOM_INICIAL, { viewW: cardW, viewH, baseW: cardW, baseH, min: 1, max: ZOOM_MAX, arriba: ARRIBA });
   const zoom = m.zoom;
+    const [nivel, setNivel] = useState(0);
+      const [aulaSel, setAulaSel] = useState<LugarInterior | null>(null);
+  const conInterior = (b: { id: string }) => zoom >= ZOOM_INTERIORES && !!TRANSFORMS['edificio-' + b.id];
   const mapWidth = cardW * zoom;
   const mapHeight = baseH * zoom;
   const scale = mapWidth / VB_W; // píxeles de pantalla por unidad del mapa
+    // los planos interiores se redibujan de a saltos (no en cada cuadro del pellizco): el zoom fluye
+  const zoomQ = Math.floor(zoom * 5 + 1e-6) / 5;
+  const scaleQ = (cardW * zoomQ) / VB_W;
+  const onElegirRef = useRef<(l: LugarInterior) => void>(() => {});
+   const onEdificioRef = useRef<(id: string, e?: any) => void>(() => {});
+  const onElegirEst = useCallback((l: LugarInterior) => onElegirRef.current(l), []);
+    const onEdificioEst = useCallback((id: string, e?: any) => onEdificioRef.current(id, e), []);
+  onElegirRef.current = (l) => {
+    if (modoRuta) ponerLugar(l);
+    else { setSelected(null); setAulaSel(l); }
+  };
+    onEdificioRef.current = (id, e) => {
+    if (modoRuta && e) { tocarMapa(e); return; }
+    const b = BUILDINGS.find((x) => 'edificio-' + x.id === id);
+    if (b) elegir(b);
+  };
   const labelPx = Math.min(13, 6.5 + zoom * 1.5); // la letra crece al acercar
   const fontSize = labelPx / scale;
   const radioPunto = 9 / scale;
 
-  const ub = useUbicacion();
+  const ub = useUbicacion(activo);
   const miPos = useMemo(() => (ub.punto ? aSvg(ub.punto) : null), [ub.punto]);
   const cerca = useMemo(() => (miPos ? puertaMasCercana(miPos) : null), [miPos]);
   const lejos = !!cerca && cerca.metros > 1500;
+    const posKey = miPos ? `${Math.round(miPos.x / 4)},${Math.round(miPos.y / 4)}` : '';
   const textoGps =
     ub.estado === 'denegado' ? 'Ubicación desactivada: habilitala en Ajustes para verte en el mapa.'
     : ub.estado === 'apagado' ? 'Activá el GPS del celular para verte en el mapa.'
@@ -151,9 +184,104 @@ export default function CampusMap({ onEnterBuilding }: Props) {
     setRuta(null);
     setErrorRuta(null);
   }
+    // por defecto se sale de donde estás (GPS); si no hay ubicación, de la Entrada Mitre
+  function ponerDesdeInicial() {
+    if (miPos && !lejos) { setDesde({ clave: YO, label: 'Mi ubicación' }); setDesdeTxt('Mi ubicación'); return; }
+    const o = ORIGENES.find((x) => x.id === origen);
+    if (o) { setDesde({ clave: o.id, label: o.label }); setDesdeTxt(o.label); }
+  }
+  function abrirRuta(h?: Building | null) {
+    setModoRuta(true);
+    setCampo(null);
+    setSelected(null);
+    limpiarRuta();
+    ponerDesdeInicial();
+    if (h) { setHasta({ clave: 'edificio-' + h.id, label: h.label }); setHastaTxt(h.label); }
+    else { setHasta(null); setHastaTxt(''); }
+  }
+  // desde el buscador: primero se ve el camino por el campus hasta el edificio del aula
+  function abrirRutaA(l: Lugar) {
+    setModoRuta(true);
+    setCampo(null);
+    setSelected(null);
+    limpiarRuta();
+    ponerDesdeInicial();
+    setHasta(l);
+    setHastaTxt(l.label);
+  }
+  function cerrarRuta() {
+    setModoRuta(false);
+    setCampo(null);
+        setElegirEn(null);
+    setDesde(null); setHasta(null);
+    setDesdeTxt(''); setHastaTxt('');
+    limpiarRuta();
+  }
 
+  function intercambiar() {
+    const d = desde, h = hasta, dt = desdeTxt, ht = hastaTxt;
+    setDesde(h); setHasta(d); setDesdeTxt(ht); setHastaTxt(dt);
+  }
+
+  function sugerir(texto: string, esDesde: boolean): Lugar[] {
+    const t = norm(texto);
+    const out: Lugar[] = [];
+    if (esDesde && miPos && !lejos) out.push({ clave: YO, label: 'Mi ubicación', sub: 'Tu posición actual (GPS)' });
+    if (esDesde) ORIGENES.filter((o) => !t || norm(o.label).includes(t)).forEach((o) => out.push({ clave: o.id, label: o.label, sub: 'Entrada' }));
+    if (t) {
+      BUILDINGS.filter((b) => norm(b.label).includes(t)).slice(0, 3).forEach((b) => out.push({ clave: 'edificio-' + b.id, label: b.label, sub: 'Edificio' }));
+      buscarEnTodos(texto, 6).forEach((r) => out.push({ clave: r.buildingId, label: r.label, edificio: r.edificio, sub: `${r.edificio} · ${r.floor}`, destino: { floor: r.floor, id: r.id } }));
+    }
+    return out.slice(0, 30);
+  }
+
+  function elegirLugar(l: Lugar) {
+    if (campo === 'desde') { setDesde(l); setDesdeTxt(l.label); }
+    else { setHasta(l); setHastaTxt(l.label); }
+    setCampo(null);
+    Keyboard.dismiss();
+  }
+    // pone un lugar en "Desde" o "Hasta" según lo que estés eligiendo
+  function ponerLugar(l: Lugar) {
+    const donde = elegirEn ?? campo ?? 'hasta';
+    if (donde === 'desde') { setDesde(l); setDesdeTxt(l.label); }
+    else { setHasta(l); setHastaTxt(l.label); }
+    setElegirEn(null);
+    setCampo(null);
+    Keyboard.dismiss();
+  }
+  // tocaste un lugar cualquiera del mapa
+  function tocarMapa(e: any) {
+    const { locationX, locationY } = e.nativeEvent;
+    ponerLugar({ clave: '__punto__', label: 'Punto elegido en el mapa', punto: { x: VB_X + locationX / scale, y: VB_Y + locationY / scale } });
+  }
+
+  // cuando están los dos lugares, se traza sola la ruta
+  useEffect(() => {
+    if (!modoRuta) return;
+    if (desde && hasta) {
+                const ext = (l: Lugar) => ({
+        punto: l.punto,
+        clave: /^(edificio-|entrada-|__)/.test(l.clave) ? l.clave : 'edificio-' + l.clave,
+        label: l.label, edificio: l.edificio, destino: l.destino,
+      });
+      const r =
+        desde.clave === YO
+          ? miPos
+            ? rutaGeneral({ punto: miPos, label: 'Mi ubicación', gps: true }, ext(hasta))
+            : { error: 'Todavía no tenemos tu ubicación. Elegí desde dónde salís.' }
+          : rutaGeneral(ext(desde), ext(hasta));
+      if ('error' in r) { setRuta(null); setErrorRuta(r.error); }
+      else { setErrorRuta(null); setRuta(r); }
+    } else {
+      limpiarRuta();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [desde, hasta, modoRuta, posKey]);
   function elegir(b: Building) {
+    if (modoRuta) { ponerLugar({ clave: 'edificio-' + b.id, label: b.label }); return; }
     setSelected(b);
+    setAulaSel(null);
     limpiarRuta();
     // acerca y centra el mapa sobre el edificio
     const c = centros[b.id];
@@ -188,7 +316,82 @@ export default function CampusMap({ onEnterBuilding }: Props) {
       setRuta(r);
     }
   }
+  const lista = campo ? sugerir(campo === 'desde' ? desdeTxt : hastaTxt, campo === 'desde') : [];
+  const rutaAbierta = modoRuta && !!(ruta || errorRuta);
+  const intr = hasta && !hasta.destino ? idInterior(hasta.clave) : undefined;
 
+  const pasosUI = ruta && ruta.pasos.length > 0 && (
+    <View style={{ marginTop: 8, gap: 8 }}>
+      {ruta.pasos.map((paso, i) => (
+        <View key={i} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+          <View style={s.stepN}>
+            <Text style={{ fontSize: 10, fontWeight: '700', color: C.text }}>{i + 1}</Text>
+          </View>
+          <Text style={{ flex: 1, fontSize: 12.5, color: C.dim }}>
+            {paso.map((seg, j) => (
+              <Text key={j} style={seg.b ? { color: C.text, fontWeight: '600' } : undefined}>{seg.t}</Text>
+            ))}
+          </Text>
+        </View>
+      ))}
+    </View>
+  );
+
+  const panelRuta = (
+    <View style={s.rutaCard}>
+      <View style={s.rutaFila}>
+        <View style={s.rutaGuia}>
+          <View style={[s.rutaPunto, { backgroundColor: C.mapAccent }]} />
+          <View style={s.rutaLinea} />
+          <View style={[s.rutaPunto, { backgroundColor: C.accent }]} />
+        </View>
+        <View style={{ flex: 1, gap: 6 }}>
+          <TextInput
+            value={desdeTxt}
+            onFocus={() => setCampo('desde')}
+            onChangeText={(t) => { setDesdeTxt(t); setDesde(null); setCampo('desde'); }}
+            placeholder="Desde: entrada, edificio o aula"
+            placeholderTextColor={C.placeholder}
+            style={s.rutaInput}
+          />
+          <TextInput
+            value={hastaTxt}
+            onFocus={() => setCampo('hasta')}
+            onChangeText={(t) => { setHastaTxt(t); setHasta(null); setCampo('hasta'); }}
+            placeholder="Hasta: edificio o aula"
+            placeholderTextColor={C.placeholder}
+            style={s.rutaInput}
+          />
+        </View>
+        <View style={{ gap: 6 }}>
+          <Pressable onPress={intercambiar} hitSlop={8} style={s.rutaBtn}><Text style={s.rutaBtnTxt}>⇅</Text></Pressable>
+          <Pressable onPress={cerrarRuta} hitSlop={8} style={s.rutaBtn}><Text style={s.rutaBtnTxt}>✕</Text></Pressable>
+        </View>
+      </View>
+           {elegirEn && (
+        <Text style={{ fontSize: 12, color: C.dim, marginTop: 6 }}>
+          {elegirEn === 'desde' ? 'Tocá en el mapa desde dónde salís' : 'Tocá en el mapa adónde querés llegar'}
+        </Text>
+      )}
+      {!!campo && (
+        <ScrollView style={{ maxHeight: 260, marginTop: 6 }} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+          <Pressable style={s.whereOpt} onPress={() => { setElegirEn(campo); setCampo(null); Keyboard.dismiss(); }}>
+            <View style={s.dot} />
+            <Text style={{ fontSize: 13, fontWeight: '600', color: C.text }}>Elegir en el mapa</Text>
+          </Pressable>
+          {lista.map((l, i) => (
+            <Pressable key={l.clave + (l.destino?.id ?? '') + i} style={s.whereOpt} onPress={() => elegirLugar(l)}>
+              <View style={s.dot} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 13, fontWeight: '600', color: C.text }} numberOfLines={1}>{l.label}</Text>
+                {!!l.sub && <Text style={{ fontSize: 11, color: C.dim }}>{l.sub}</Text>}
+              </View>
+            </Pressable>
+          ))}
+        </ScrollView>
+      )}
+    </View>
+  );
   const gateSize = fontSize;
   const corvTx = 36.3 - 7 / scale - gateSize * 0.5;
 
@@ -199,10 +402,12 @@ export default function CampusMap({ onEnterBuilding }: Props) {
       {/* el mapa, a pantalla completa */}
       <MapaVista m={m} viewW={cardW} viewH={viewH} baseW={cardW} baseH={baseH} arriba={ARRIBA}>
           <Svg width={mapWidth} height={mapHeight} viewBox={`${VB_X} ${VB_Y} ${VB_W} ${VB_H}`}>
+                        <G onPress={modoRuta ? tocarMapa : undefined}>
+            <Rect x={VB_X} y={VB_Y} width={VB_W} height={VB_H} fill="#000" fillOpacity={0} />
             {/* 1. terreno (contorno de la universidad) */}
-            <Path d={PATH_D} fill={C.paths} opacity={0.45} stroke={C.bldgStroke} strokeWidth={1.5 / scale} />
+            <Path d={PATH_D} fill={C.paths} opacity={0.45} stroke={C.bldgStroke} strokeWidth={1 / scale} />
             {PATH_POLYGONS.map((p, i) => (
-              <Polygon key={`t${i}`} points={p} fill={C.paths} opacity={0.45} stroke={C.bldgStroke} strokeWidth={1.5 / scale} />
+              <Polygon key={`t${i}`} points={p} fill={C.paths} opacity={0.45} stroke={C.bldgStroke} strokeWidth={1 / scale} />
             ))}
   
             {/* 2. césped, encima del terreno */}
@@ -218,28 +423,29 @@ export default function CampusMap({ onEnterBuilding }: Props) {
                 key={b.id}
                 points={b.points}
                 fill={selected?.id === b.id ? C.bldgSel : C.bldgFill}
+                fillOpacity={conInterior(b) ? 0.01 : 1}
                 stroke={selected?.id === b.id ? C.bldgSelStroke : C.bldgStroke}
-                strokeWidth={1.2 / scale}
-                onPress={() => elegir(b)}
+                strokeOpacity={conInterior(b) && selected?.id !== b.id ? 0 : 1}
+                strokeWidth={1 / scale}
+                onPress={modoRuta ? tocarMapa : () => elegir(b)}
               />
             ))}
   
-            {/* puntitos de las puertas */}
-            {PUERTAS.map(([x, y, rx, ry], i) => (
-              <Ellipse key={`d${i}`} cx={x} cy={y} rx={rx} ry={ry} fill={C.door} pointerEvents="none" />
-            ))}
+                           <InterioresCampus C={C} scale={scaleQ} zoom={zoomQ} nivel={nivel} verde={VERDE} onElegir={onElegirEst} onEdificio={onEdificioEst} />
   
             {ruta && (
               <Path
                 d={rutaToPath(ruta.points)}
                 fill="none"
                 stroke={C.route}
-                strokeWidth={3 / scale}
-                strokeDasharray={`${7 / scale} ${5 / scale}`}
+                strokeWidth={1.4 / scale}
+                strokeDasharray={`${4 / scale} ${3 / scale}`}
                 strokeLinecap="round"
                 pointerEvents="none"
               />
             )}
+                        {desde?.punto && <Circle cx={desde.punto.x} cy={desde.punto.y} r={radioPunto * 1.3} fill={C.mapAccent} stroke="#ffffff" strokeWidth={radioPunto * 0.35} pointerEvents="none" />}
+            {hasta?.punto && <Circle cx={hasta.punto.x} cy={hasta.punto.y} r={radioPunto * 1.3} fill={C.accent} stroke="#ffffff" strokeWidth={radioPunto * 0.35} pointerEvents="none" />}
   
             {BUILDINGS.map((b) => (
               <Cartel C={C} key={`t-${b.id}`} x={centros[b.id].x} y={centros[b.id].y + fontSize * 0.35} size={fontSize}>
@@ -265,55 +471,25 @@ export default function CampusMap({ onEnterBuilding }: Props) {
                 <Circle cx={miPos.x} cy={miPos.y} r={radioPunto} fill="#2f6fe0" stroke="#ffffff" strokeWidth={radioPunto * 0.35} pointerEvents="none" />
               </>
             )}
+                        </G>
           </Svg>
-      </MapaVista>
+     </MapaVista>
+      <SelectorPiso C={C} nivel={nivel} onCambiar={setNivel} visible={zoom >= ZOOM_INTERIORES && !modoRuta} />
 
       {/* arriba, flotando: buscador y "estás en" */}
-      <BarraSuperior value={query} onChange={buscar} placeholder="Buscar edificio o aula (ej: Aula 5)">
-        <FilaChips>
-          <Chip
-            texto={`Estás en: ${GATE_LABELS[origen]}`}
-            icono={<IconoUI nombre="ubicacion" size={14} />}
-            derecha={<IconoUI nombre={whereOpen ? 'arriba' : 'abajo'} size={12} color={C.dim} />}
-            onPress={() => setWhereOpen((o) => !o)}
-          />
-          {cerca && !lejos && (
-            <Chip
-              texto="Usar mi ubicación"
-              onPress={() => {
-                setOrigen(cerca.id);
-                limpiarRuta();
-              }}
-            />
-          )}
-        </FilaChips>
-        {whereOpen && (
-          <View style={s.whereList}>
-            {(Object.keys(GATE_LABELS) as PuertaCampus[]).map((id) => {
-              const activo = id === origen;
-              return (
-                <Pressable
-                  key={id}
-                  style={[s.whereOpt, activo && { backgroundColor: C.elevated }]}
-                  onPress={() => {
-                    setOrigen(id);
-                    setWhereOpen(false);
-                    limpiarRuta();
-                  }}
-                >
-                  <View style={s.dot} />
-                  <Text style={[{ fontSize: 12.5, color: C.text }, activo && { color: C.pillTypeText, fontWeight: '600' }]}>{GATE_LABELS[id]}</Text>
-                </Pressable>
-              );
-            })}
-          </View>
+      <BarraSuperior value={query} onChange={buscar} placeholder="Buscar edificio o aula (ej: Aula 5)" sinBuscador={modoRuta}>
+                {modoRuta && panelRuta}
+        {!modoRuta && (
+          <FilaChips>
+            <Chip texto="Cómo llegar" icono={<IconoUI nombre="ubicacion" size={14} />} onPress={() => abrirRuta()} />
+          </FilaChips>
         )}
-        {!!textoGps && (
+        {!!textoGps && !modoRuta && (
           <View style={s.gpsChip}>
             <Text style={s.gpsTxt}>{textoGps}</Text>
           </View>
         )}
-        {hayLista && (
+        {hayLista && !modoRuta && (
           <ScrollView style={s.resultados} keyboardShouldPersistTaps="handled" nestedScrollEnabled>
             {edificiosHallados.map((b) => (
               <Pressable
@@ -337,9 +513,10 @@ export default function CampusMap({ onEnterBuilding }: Props) {
                 key={r.buildingId + r.floor + r.id}
                 style={s.whereOpt}
                 onPress={() => {
-                  setListaAbierta(false);
+                 setListaAbierta(false);
+                  setQuery('');
                   Keyboard.dismiss();
-                  onEnterBuilding?.(r.buildingId, { floor: r.floor, id: r.id });
+                  abrirRutaA({ clave: r.buildingId, label: r.label, edificio: r.edificio, sub: `${r.edificio} · ${r.floor}`, destino: { floor: r.floor, id: r.id } });
                 }}
               >
                 <View style={s.dot} />
@@ -358,8 +535,45 @@ export default function CampusMap({ onEnterBuilding }: Props) {
         )}
       </BarraSuperior>
 
-      <BotonesZoom onMas={() => m.zoomPor(1.6)} onMenos={() => m.zoomPor(1 / 1.6)} desplaza={selected && !teclado ? subeBotones(progHoja, alturaHoja) : undefined} />
-
+      <BotonesZoom onMas={() => m.zoomPor(1.6)} onMenos={() => m.zoomPor(1 / 1.6)} desplaza={(selected || aulaSel || rutaAbierta) && !teclado ? subeBotones(progHoja, alturaHoja) : undefined} />
+      {rutaAbierta && !teclado && (
+        <Hoja progreso={progHoja} key="ruta" resumen={`${desdeTxt} → ${hastaTxt}`} onCerrar={cerrarRuta} onLayoutAlto={setAlturaHoja}>
+          <ScrollView style={{ maxHeight: winH * 0.5 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            <Text style={s.infoTitle}>{hasta?.edificio ?? hasta?.label}</Text>
+            <Text style={s.infoSub}>{`Desde ${desde?.edificio ?? desde?.label}`}</Text>
+            {errorRuta && (
+              <View style={s.noteCard}>
+                <Text style={{ color: C.dim, fontSize: 12 }}>{errorRuta}</Text>
+              </View>
+            )}
+            {pasosUI}
+            {hasta?.destino && (
+              <Pressable style={s.primaryBtn} onPress={() => onEnterBuilding?.(hasta.clave, hasta.destino, entradaInterior(ruta?.puerta))}>
+                <Text style={s.primaryBtnText}>{`Ver ${hasta.label} en el plano  →`}</Text>
+              </Pressable>
+            )}
+            {intr && (
+              <Pressable style={s.primaryBtn} onPress={() => onEnterBuilding?.(intr, undefined, entradaInterior(ruta?.puerta))}>
+                <Text style={s.primaryBtnText}>Ver mapa interior  →</Text>
+              </Pressable>
+            )}
+          </ScrollView>
+        </Hoja>
+      )}
+            {aulaSel && !selected && !rutaAbierta && !teclado && (
+        <Hoja progreso={progHoja} key={'aula' + aulaSel.destino.id} resumen={aulaSel.label} onCerrar={() => setAulaSel(null)} onLayoutAlto={setAlturaHoja}>
+          <ScrollView style={{ maxHeight: winH * 0.5 }} nestedScrollEnabled showsVerticalScrollIndicator={false}>
+            <Text style={s.infoTitle}>{aulaSel.label}</Text>
+            <Text style={s.infoSub}>{`${aulaSel.edificio} · ${aulaSel.sub}`}</Text>
+            <Pressable style={s.primaryBtn} onPress={() => onEnterBuilding?.(aulaSel.clave, aulaSel.destino)}>
+              <Text style={s.primaryBtnText}>Ver en el mapa interior  →</Text>
+            </Pressable>
+            <Pressable style={s.secondaryBtn} onPress={() => { const l = aulaSel; setAulaSel(null); abrirRutaA(l); }}>
+              <Text style={s.secondaryBtnText}>Cómo llegar</Text>
+            </Pressable>
+          </ScrollView>
+        </Hoja>
+      )}
       {/* abajo: ficha del edificio elegido, como la hoja de Google Maps */}
       {selected && !teclado && (
         <Hoja progreso={progHoja} key={selected.id} resumen={selected.label} onCerrar={() => { setSelected(null); limpiarRuta(); }} onLayoutAlto={setAlturaHoja}>
@@ -385,7 +599,7 @@ export default function CampusMap({ onEnterBuilding }: Props) {
               </View>
             )}
 
-            <Pressable style={s.secondaryBtn} onPress={comoLlegar}>
+           <Pressable style={s.secondaryBtn} onPress={() => abrirRuta(selected)}>
               <Text style={s.secondaryBtnText}>Cómo llegar</Text>
             </Pressable>
 
@@ -423,6 +637,14 @@ export default function CampusMap({ onEnterBuilding }: Props) {
 const makeStyles = (C: Colores) =>
   StyleSheet.create({
     raiz: { flex: 1, backgroundColor: C.bg },
+        rutaCard: { backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, borderRadius: 16, padding: 10, elevation: 8 },
+    rutaFila: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    rutaGuia: { alignItems: 'center', width: 14, gap: 3 },
+    rutaPunto: { width: 10, height: 10, borderRadius: 5 },
+    rutaLinea: { width: 2, height: 22, backgroundColor: C.btnBorder },
+    rutaInput: { height: 38, borderRadius: 10, backgroundColor: C.elevated, paddingHorizontal: 10, fontSize: 13, color: C.text },
+    rutaBtn: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center', backgroundColor: C.elevated },
+    rutaBtnTxt: { fontSize: 14, fontWeight: '700', color: C.text },
     pantalla: { flex: 1, backgroundColor: C.mapBg, overflow: 'hidden' },
     whereList: { backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, borderRadius: 14, padding: 8, marginRight: 60, elevation: 8 },
     whereOpt: { flexDirection: 'row', alignItems: 'center', gap: 9, padding: 9, borderRadius: 9 },

@@ -1,3 +1,4 @@
+import { DESTINOS_INTERIORES, ESCALERAS_PB, GRAFO } from '../data/campusGrafo';
 import type { Coord, Paso } from './interior';
 
 // Datos generados del HTML original: puertas de cada edificio y caminos peatonales del campus.
@@ -132,7 +133,8 @@ const DOOR_POINTS: Record<string, Coord> = {
   }
 };
 
-const CAMPUS_GRAPH: { nodes: Record<string, Coord>; edges: [string, string][] } = {
+const CAMPUS_GRAPH = GRAFO;
+const GRAFO_VIEJO: { nodes: Record<string, Coord>; edges: [string, string][] } = {
   "nodes": {
     "mitre": {
       "x": 433.4,
@@ -276,7 +278,9 @@ const CAMPUS_GRAPH: { nodes: Record<string, Coord>; edges: [string, string][] } 
 };
 
 /** a qué nodo del grafo se llega parado en la puerta de cada edificio */
-const DOOR_ANCHOR: Record<string, string> = {
+// en el grafo nuevo cada puerta es un nodo con su mismo nombre
+const DOOR_ANCHOR: Record<string, string> = Object.fromEntries(Object.keys(DOOR_POINTS).map((k) => [k, k]));
+const DOOR_ANCHOR_VIEJO: Record<string, string> = {
   "entrada-mitre": "mitre",
   "entrada-corvalan": "corvalan",
   "entrada-daract1-1": "ne2",
@@ -357,23 +361,127 @@ function nearestDoor(buildingKey: string, from: Coord): string | null {
   return best;
 }
 
-/** Ruta caminando desde una de las dos entradas hasta la puerta más cercana de un edificio */
-export function rutaCampus(origen: PuertaCampus, buildingId: string, label: string): { points: Coord[]; pasos: Paso[] } | { error: string } {
-  const key = buildingId.startsWith('edificio-') ? buildingId : 'edificio-' + buildingId;
-  const origin = CAMPUS_GRAPH.nodes[origen];
-  const door = nearestDoor(key, origin);
-  if (!door) return { error: 'Todavía no cargamos una puerta de acceso para este edificio.' };
+ const NOMBRE_EDIFICIO: Record<string, string> = {
+  'edificio-daract1': 'Daract I', 'edificio-daract2': 'Daract II', 'edificio-dorrego1': 'Dorrego I',
+  'edificio-dorrego2': 'Dorrego II', 'edificio-historico': 'Edificio Histórico', 'edificio-laboratorios': 'Laboratorios',
+  'edificio-comedor': 'Comedor', 'edificio-carpa': 'Carpa / Pabellón', 'edificio-oficinas': 'Oficinas', 'edificio-espum': 'ESPUM',
+};
 
-  const path = dijkstra(origen, DOOR_ANCHOR[door]);
-  const doorPoint = DOOR_POINTS[door];
-  if (!path) return { points: [origin, doorPoint], pasos: [] };
+/** Todas las puertas del campus, para elegir "desde dónde salís" */
+export const ORIGENES: { id: string; label: string }[] = [
+  { id: 'entrada-mitre', label: GATE_LABELS.mitre },
+  { id: 'entrada-corvalan', label: GATE_LABELS.corvalan },
+  ...Object.entries(BUILDING_DOORS).flatMap(([key, puertas]) =>
+    puertas.map((p, i) => ({
+      id: p,
+      label: `${NOMBRE_EDIFICIO[key] ?? key} · Entrada${puertas.length > 1 ? ' ' + (i + 1) : ''}`,
+    })),
+  ),
+];
+export const nombreOrigen = (id: string) => ORIGENES.find((o) => o.id === id)?.label ?? id;
 
-  const points = [...path.map((n) => CAMPUS_GRAPH.nodes[n]), doorPoint];
-  const porHistorico = path.includes('hist_north');
+// las puertas de un lugar: una puerta suelta ("entrada-…") o todas las de un edificio
+function puertasDe(id: string): string[] {
+  if (DOOR_POINTS[id]) return [id];
+  const key = id.startsWith('edificio-') ? id : 'edificio-' + id;
+  return BUILDING_DOORS[key] ?? [];
+}
+
+/** Ruta caminando entre dos lugares del campus (puerta o edificio de salida → edificio de llegada) */
+function rutaPorPuertas(origen: string, buildingId: string, label: string, nombreDesde?: string): { points: Coord[]; pasos: Paso[]; puerta?: string } | { error: string } {
+  const desde = puertasDe(origen);
+  const hasta = puertasDe(buildingId);
+  if (!desde.length) return { error: 'Ese lugar todavía no tiene una puerta cargada para salir.' };
+  if (!hasta.length) return { error: 'Todavía no cargamos una puerta de acceso para este edificio.' };
+
+  // el par de puertas más cercano entre sí
+  let a = desde[0];
+  let b = hasta[0];
+  let mejor = Infinity;
+  for (const x of desde) for (const y of hasta) {
+    const d = dist2(DOOR_POINTS[x], DOOR_POINTS[y]);
+    if (d < mejor) { mejor = d; a = x; b = y; }
+  }
+
+  const quien = nombreDesde ?? nombreOrigen(a);
+  if (a === b) {
+    return { points: [DOOR_POINTS[a]], pasos: [[{ t: 'Ya estás en la entrada de ' }, { t: label, b: true }]], puerta: b };
+  }
+
+  const path = dijkstra(DOOR_ANCHOR[a], DOOR_ANCHOR[b]);
+  if (!path) return { points: [DOOR_POINTS[a], DOOR_POINTS[b]], pasos: [], puerta: b };
+
+  const points = [DOOR_POINTS[a], ...path.map((n) => CAMPUS_GRAPH.nodes[n]), DOOR_POINTS[b]];
+  const porHistorico = path.some((n) => n.startsWith('h:'));
   const pasos: Paso[] = [
-    [{ t: 'Salís desde ' }, { t: GATE_LABELS[origen], b: true }],
+    [{ t: 'Salís desde ' }, { t: quien, b: true }],
     [{ t: 'Seguís el camino principal' + (porHistorico ? ', entrás por la puerta del edificio histórico y cruzás por su pasillo interno' : '') }],
     [{ t: 'Llegás a la entrada de ' }, { t: label, b: true }],
   ];
-  return { points, pasos };
+  return { points, pasos, puerta: b };
+}
+// puerta del campus -> punto de entrada en el plano interior (los de la lista "Estás en")
+const PUNTO_INTERIOR: Record<string, string> = {
+  'entrada-daract1-1': 'entrada-1', 'entrada-daract1-2': 'entrada-2',
+  'entrada-daract2-1': 'entrada-1', 'entrada-daract2-2': 'entrada-2',
+  'entrada-dorrego1-1': 'entrada-1', 'entrada-dorrego1-2': 'entrada-2',
+  'entrada-historico-1': 'entrada-mitre', 'entrada-historico-2': 'entrada-corvalan', 'entrada-historico-3': 'salida-norte-2',
+  'entrada-carpa-1': 'salida-patio', 'entrada-carpa-2': 'salida-norte-1', 'entrada-carpa-3': 'salida-patio',
+  'entrada-comedor-1': 'salida-buffet-norte', 'entrada-comedor-2': 'salida-buffet-sur',
+};
+export const entradaInterior = (puerta?: string) => (puerta ? PUNTO_INTERIOR[puerta] : undefined);
+const PREFIJO_INTERIOR: Record<string, string> = {
+  'edificio-historico': 'h:', 'edificio-daract1': 'd1:', 'edificio-daract2': 'd2:', 'edificio-dorrego1': 'do:',
+};
+
+/** Ruta hasta un edificio o, si se pasa `destino`, hasta la puerta del aula (o la escalera si está en un piso de arriba) */
+export function rutaCampus(
+  origen: string,
+  buildingId: string,
+  label: string,
+  nombreDesde?: string,
+  destino?: { floor: string; id: string },
+  aula?: string,
+): { points: Coord[]; pasos: Paso[]; puerta?: string } | { error: string } {
+  const base = rutaPorPuertas(origen, buildingId, label, nombreDesde);
+  if (!destino) return base;
+  const key = buildingId.startsWith('edificio-') ? buildingId : 'edificio-' + buildingId;
+  const enPB = DESTINOS_INTERIORES[key]?.[destino.id];
+  const objetivos = enPB ?? ESCALERAS_PB[key];
+  const desde = puertasDe(origen);
+  if (!objetivos?.length || !desde.length) return base;
+
+  let mejor: { path: string[]; d: number; a: string } | null = null;
+  for (const a of desde) {
+    for (const t of objetivos) {
+      const path = dijkstra(DOOR_ANCHOR[a], t);
+      if (!path) continue;
+      let d = 0;
+      for (let i = 1; i < path.length; i++) {
+        const p = CAMPUS_GRAPH.nodes[path[i - 1]];
+        const q = CAMPUS_GRAPH.nodes[path[i]];
+        d += Math.hypot(p.x - q.x, p.y - q.y);
+      }
+      if (!mejor || d < mejor.d) mejor = { path, d, a };
+    }
+  }
+  if (!mejor) return base;
+
+  // la puerta por la que se entra al edificio (para abrir el plano interior parado ahí)
+  const pre = PREFIJO_INTERIOR[key] ?? '';
+  let i = mejor.path.length;
+  while (i > 0 && pre && mejor.path[i - 1].startsWith(pre)) i--;
+  const puerta = i > 0 && DOOR_POINTS[mejor.path[i - 1]] ? mejor.path[i - 1] : 'error' in base ? undefined : base.puerta;
+
+  const quien = nombreDesde ?? nombreOrigen(mejor.a);
+  const porHistorico = key !== 'edificio-historico' && mejor.path.some((n) => n.startsWith('h:'));
+  const pasos: Paso[] = [
+    [{ t: 'Salís desde ' }, { t: quien, b: true }],
+    [{ t: 'Seguís el camino principal' + (porHistorico ? ' y cruzás por el pasillo del Edificio Histórico' : '') }],
+    [{ t: 'Entrás a ' }, { t: NOMBRE_EDIFICIO[key] ?? label, b: true }],
+    enPB
+      ? [{ t: 'Seguís por el pasillo hasta ' }, { t: aula ?? 'el aula', b: true }]
+      : [{ t: 'Subí por la escalera a ' }, { t: destino.floor, b: true }, { t: ' y seguí hasta ' }, { t: aula ?? 'el aula', b: true }],
+  ];
+  return { points: [DOOR_POINTS[mejor.a], ...mejor.path.map((n) => CAMPUS_GRAPH.nodes[n])], pasos, puerta };
 }

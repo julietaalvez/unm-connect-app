@@ -11,6 +11,7 @@ type Destino = { floor: string; id: string };
 // no se pierde en qué edificio estabas.
 let edificioGuardado: string | null = null;
 let destinoGuardado: Destino | undefined;
+let entradaGuardada: string | undefined;
 
 // expo-router puede devolver un parámetro como texto o como lista
 const uno = (v?: string | string[]) => (Array.isArray(v) ? v[0] : v) || undefined;
@@ -36,13 +37,16 @@ function destinoDeAula(edificio: string, aula?: string): Destino | undefined {
 export default function MapaScreen() {
   const [edificioId, setEdificio] = useState<string | null>(edificioGuardado);
   const [destino, setDestino] = useState<Destino | undefined>(destinoGuardado);
+    const [entrada, setEntrada] = useState<string | undefined>(entradaGuardada);
   const params = useLocalSearchParams<{ edificioId?: string; aula?: string; t?: string }>();
 
-  const elegir = (id: string | null, d?: Destino) => {
+   const elegir = (id: string | null, d?: Destino, e?: string) => {
     edificioGuardado = id;
     destinoGuardado = d;
+    entradaGuardada = e;
     setEdificio(id);
     setDestino(d);
+    setEntrada(e);
   };
 
   // Viene desde "¿Y mi profe?" -> "Cómo llegar": abre el edificio y deja el aula elegida
@@ -57,14 +61,16 @@ export default function MapaScreen() {
     <View style={{ flex: 1 }}>
       {/* el campus queda montado (solo oculto) para no perder lo que estaba seleccionado */}
       <View style={{ flex: 1, display: edificioId ? 'none' : 'flex' }}>
-        <CampusMap onEnterBuilding={(id, d) => elegir(id, d)} />
+        <CampusMap activo={!edificioId} onEnterBuilding={(id, d, e) => elegir(id, d, e)} />
       </View>
       {edificioId && (
         <BuildingInterior
-          key={edificioId + (destino?.id ?? '')}
+          key={edificioId + (destino?.id ?? '') + (entrada ?? '')}
           buildingId={edificioId}
           inicial={destino}
           onBack={() => elegir(null)}
+                    entradaId={entrada}
+          onIrA={(id, d) => elegir(id, d)}
         />
       )}
     </View>

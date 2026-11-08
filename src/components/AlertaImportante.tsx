@@ -1,43 +1,59 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Path } from 'react-native-svg';
 
 import { useNovedades } from '../lib/novedades';
+import { usuarioActual } from '../lib/sesion';
 
-const F = { h: 'Montserrat_800ExtraBold', semi: 'Montserrat_600SemiBold', body: 'Roboto_400Regular', bold: 'Roboto_700Bold' };
+// las novedades de aula que ya se mostraron en esta sesión
+const mostradas = new Set<number>();
 
-/**
- * Cartel que aparece solo con las novedades importantes (hoy: los cambios de aula) que todavía no leíste.
- * Al cerrarlo, esa novedad queda como leída y, si hay otra, aparece la siguiente.
- */
+/** Cartel de "Cambio de aula": aparece al abrir la app si hay avisos de aula sin leer */
 export default function AlertaImportante() {
-  const { lista, leerUna } = useNovedades();
-  const n = lista.find((x) => x.tipo === 'aula' && !x.leida);
-  if (!n) return null;
+  const { lista, cargado, leerTodas } = useNovedades();
+  const [, setTick] = useState(0);
+  const [abierto, setAbierto] = useState(false);
+
+  const esAlumno = usuarioActual()?.rol !== 'profesor';
+  const pendientes = useMemo(
+    () => lista.filter((n) => n.tipo === 'aula' && !n.leida && !mostradas.has(n.id)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [lista, abierto, setTick],
+  );
+  const actual = pendientes[0];
+
+  useEffect(() => {
+    if (esAlumno && cargado && actual) setAbierto(true);
+  }, [esAlumno, cargado, actual?.id]);
+
+  if (!esAlumno || !actual) return null;
+
+  const cerrar = () => {
+    mostradas.add(actual.id);
+    if (pendientes.length <= 1) {
+      setAbierto(false);
+      leerTodas(); // quedan leídas: la campanita se limpia
+    }
+    setTick((t) => t + 1);
+  };
+
+  const detalle = actual.materia && !actual.texto.toLowerCase().includes(actual.materia.toLowerCase()) ? `${actual.materia}: ${actual.texto}` : actual.texto;
 
   return (
-    <Modal visible transparent animationType="fade" statusBarTranslucent onRequestClose={() => leerUna(n.id)}>
+    <Modal visible={abierto} transparent animationType="fade" onRequestClose={cerrar}>
       <View style={s.fondo}>
-        <View style={s.card}>
-          <Pressable style={s.cerrar} onPress={() => leerUna(n.id)} hitSlop={12} accessibilityLabel="Cerrar aviso">
-            <Svg width={14} height={14} viewBox="0 0 14 14">
-              <Path d="M2 2 L12 12 M12 2 L2 12" stroke="#fff" strokeWidth={2} strokeLinecap="round" />
-            </Svg>
+        <View style={s.caja}>
+          <Pressable onPress={cerrar} hitSlop={14} style={s.cerrar} accessibilityLabel="Cerrar">
+            <Text style={s.cerrarTxt}>×</Text>
           </Pressable>
-
-          <Svg width={64} height={64} viewBox="0 0 64 64">
-            <Path d="M32 6 L60 56 H4 Z" stroke="#fff" strokeWidth={4} strokeLinejoin="round" fill="none" />
+          <Svg width={64} height={64} viewBox="0 0 64 64" fill="none">
+            <Path d="M32 8 L58 54 H6 Z" stroke="#fff" strokeWidth={4.5} strokeLinejoin="round" />
             <Path d="M32 24 V38" stroke="#fff" strokeWidth={4.5} strokeLinecap="round" />
             <Path d="M32 46 V47" stroke="#fff" strokeWidth={5} strokeLinecap="round" />
           </Svg>
-
-          <Text style={s.tag}>CAMBIO DE AULA</Text>
-          {!!n.titulo && <Text style={s.titulo}>{n.titulo}</Text>}
-          {!!n.texto && <Text style={s.texto}>{n.texto}</Text>}
-          {!!n.materia && <Text style={s.materia}>{n.materia}</Text>}
-
-          <Pressable style={s.btn} onPress={() => leerUna(n.id)}>
-            <Text style={s.btnTxt}>Entendido</Text>
-          </Pressable>
+          <Text style={s.titulo}>{actual.titulo.toUpperCase()}</Text>
+          <Text style={s.texto}>{detalle}</Text>
+          {pendientes.length > 1 && <Text style={s.mas}>{`+${pendientes.length - 1} aviso${pendientes.length - 1 === 1 ? '' : 's'} más`}</Text>}
         </View>
       </View>
     </Modal>
@@ -45,13 +61,11 @@ export default function AlertaImportante() {
 }
 
 const s = StyleSheet.create({
-  fondo: { flex: 1, backgroundColor: 'rgba(5,12,30,0.6)', alignItems: 'center', justifyContent: 'center', padding: 24 },
-  card: { width: '100%', maxWidth: 360, backgroundColor: '#1a3399', borderRadius: 18, paddingTop: 28, paddingBottom: 20, paddingHorizontal: 22, alignItems: 'center', gap: 8, elevation: 12 },
-  cerrar: { position: 'absolute', top: 12, right: 14, padding: 4 },
-  tag: { fontFamily: F.semi, fontSize: 15, letterSpacing: 0.6, color: '#fff', marginTop: 6 },
-  titulo: { fontFamily: F.bold, fontSize: 14, color: '#fff', textAlign: 'center' },
-  texto: { fontFamily: F.body, fontSize: 13, lineHeight: 19, color: 'rgba(255,255,255,0.92)', textAlign: 'center' },
-  materia: { fontFamily: F.body, fontSize: 11.5, color: 'rgba(255,255,255,0.7)', textAlign: 'center' },
-  btn: { marginTop: 10, backgroundColor: '#fff', borderRadius: 999, paddingVertical: 9, paddingHorizontal: 26 },
-  btnTxt: { fontFamily: F.bold, fontSize: 13, color: '#1a3399' },
+  fondo: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', alignItems: 'center', justifyContent: 'center', padding: 28 },
+  caja: { width: '100%', maxWidth: 340, backgroundColor: '#0c2370', borderRadius: 20, paddingVertical: 28, paddingHorizontal: 22, alignItems: 'center', elevation: 12 },
+  cerrar: { position: 'absolute', top: 8, right: 14 },
+  cerrarTxt: { color: '#fff', fontSize: 26, lineHeight: 28, fontWeight: '600' },
+  titulo: { color: '#fff', fontSize: 17, fontWeight: '800', marginTop: 12, textAlign: 'center', letterSpacing: 0.3 },
+  texto: { color: '#fff', fontSize: 13.5, marginTop: 10, textAlign: 'center', lineHeight: 19 },
+  mas: { color: '#c9d4ff', fontSize: 11.5, marginTop: 12 },
 });

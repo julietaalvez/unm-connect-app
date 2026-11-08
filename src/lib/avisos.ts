@@ -10,6 +10,7 @@ export type AlumnoInscripto = {
   id: number;
   nombre: string;
   desde: string | null;
+  final?: number | null;
 };
 
 export type ComisionConAlumnos = {
@@ -52,13 +53,23 @@ export async function enviarAviso(
   usuarioId: number,
   claves: string[],
   titulo: string,
-  texto: string
+   texto: string,
+  tipo: 'aviso' | 'aula' = 'aviso'
 ): Promise<number> {
   const { ok, datos } = await pedir(`/docentes/${usuarioId}/avisos`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ claves, titulo, texto }),
+        body: JSON.stringify({ claves, titulo, texto, tipo }),
   });
   if (!ok) throw new Error(datos?.error || 'No se pudo enviar el aviso.');
   return datos.enviados;
+}
+/** Valor vacío = borra la nota final */
+export async function guardarNotaFinal(usuarioId: number, materia: string, alumnoId: number, nota: string): Promise<void> {
+  const { ok, datos } = await pedir(`/docentes/${usuarioId}/finales`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ materia, alumno_id: alumnoId, nota }),
+  });
+  if (!ok) throw new Error(datos?.error || 'No se pudo guardar la nota final.');
 }

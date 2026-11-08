@@ -12,6 +12,7 @@
     },
     "android": {
       "package": "com.unmconnect.app",
+     "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -21,8 +22,7 @@
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.RECORD_AUDIO"
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -51,7 +51,8 @@
           "imageWidth": 200
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-notifications"
     ],
     "experiments": {
       "typedRoutes": true,

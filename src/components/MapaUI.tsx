@@ -11,12 +11,14 @@ export function BarraSuperior({
   onChange,
   placeholder,
   children,
+  sinBuscador,
 }: {
   onBack?: () => void;
   value: string;
   onChange: (t: string) => void;
   placeholder: string;
   children?: ReactNode;
+  sinBuscador?: boolean;
 }) {
   const { C } = useTema();
   const s = estilos(C);
@@ -28,22 +30,23 @@ export function BarraSuperior({
             <IconoUI nombre="atras" size={24} color={C.text} />
           </Pressable>
         )}
-        <View style={s.buscador}>
-          <IconoUI nombre="buscar" size={16} color={C.dim} />
-          <TextInput
-            value={value}
-            onChangeText={onChange}
-            placeholder={placeholder}
-            placeholderTextColor={C.placeholder}
-            style={s.input}
-          />
-        </View>
+        {!sinBuscador && (
+          <View style={s.buscador}>
+            <IconoUI nombre="buscar" size={16} color={C.dim} />
+            <TextInput
+              value={value}
+              onChangeText={onChange}
+              placeholder={placeholder}
+              placeholderTextColor={C.placeholder}
+              style={s.input}
+            />
+          </View>
+        )}
       </View>
       {children}
     </View>
   );
 }
-
 /** Botones + y − flotando sobre el mapa */
 export function BotonesZoom({ onMas, onMenos, abajo = 14, desplaza }: { onMas: () => void; onMenos: () => void; abajo?: number; desplaza?: Animated.AnimatedInterpolation<number> }) {
   const { C } = useTema();

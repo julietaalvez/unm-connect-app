@@ -14,7 +14,7 @@ export const REFERENCIAS: Referencia[] = [
 { donde: 'edificio:Daract II', lat: -34.651063, lng: -58.774442 },
 { donde: 'edificio:Dorrego I', lat: -34.649463, lng: -58.776906 },
 { donde: 'edificio:Laboratorios', lat: -34.651489, lng:-58.774062 },
-{ donde: 'edificio:Edificio Histórico', lat: -34.651276, lng: -58.776421 },
+//{ donde: 'edificio:Edificio Histórico', lat: -34.651276, lng: -58.776421 },
 { donde: 'edificio:Comedor', lat: -34.650733, lng: -58.776816 },
 ];
 

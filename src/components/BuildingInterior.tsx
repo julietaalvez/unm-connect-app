@@ -14,7 +14,10 @@ import { AMENITIES, Comodidades, EDIFICIOS, NOTES, Piso, SCHEDULE } from '../dat
 import { fotoDeEdificio, fotoDeEspacio } from '../data/fotosEdificios';
 import { TAM_ICONO, TipoIcono, centroVisual, tipoIcono } from '../data/iconos';
 import type { NombreIcono } from '../data/iconosUI';
+import { TRANSFORMS } from '../data/unificado';
 import { cargarAulas } from '../lib/api';
+import { buscarEnTodos } from '../lib/buscadorGlobal';
+import { aSvg } from '../lib/calibracion';
 import { esOscuro, mezclar } from '../lib/colores';
 import {
   Ruta,
@@ -31,6 +34,7 @@ import {
 } from '../lib/interior';
 import { MapaVista, useMapaGestos } from '../lib/MapaZoom';
 import { Colores, useTema } from '../lib/tema';
+import { useUbicacion } from '../lib/ubicacion';
 import HeaderMapa from './HeaderMapa';
 import IconoEspacio from './IconoEspacio';
 import IconoUI from './IconoUI';
@@ -73,9 +77,9 @@ function viewBoxAjustado(piso: Piso): string {
   return `${x1 - PAD} ${y1 - PAD} ${x2 - x1 + PAD * 2} ${y2 - y1 + PAD * 2}`;
 }
 
-type Props = { buildingId: string; onBack: () => void; inicial?: { floor: string; id: string } };
+type Props = { buildingId: string; onBack: () => void; inicial?: { floor: string; id: string }; onIrA?: (id: string, d?: { floor: string; id: string }) => void; entradaId?: string };
 
-export default function BuildingInterior({ buildingId, onBack, inicial }: Props) {
+export default function BuildingInterior({ buildingId, onBack, inicial, onIrA, entradaId }: Props) {
   const { C, s } = useEstilos();
   const FILL = fillDe(C);
   const oscuro = esOscuro(C.bg);
@@ -94,12 +98,27 @@ export default function BuildingInterior({ buildingId, onBack, inicial }: Props)
   // si venís de buscar un espacio en el campus, abre en su piso y lo deja elegido
   const destino = inicial && ed.floors[inicial.floor]?.shapes.some((x) => x.id === inicial.id) ? inicial : null;
   const destinoRef = useRef(destino);
-  const [floor, setFloor] = useState(destino?.floor ?? pisos[0]);
-  const [mi, setMi] = useState<Ubicacion>(() => puntoInicial(ed));
+  const [floor, setFloor] = useState(destino?.floor ?? pisos[0]);  // si venís desde la ruta del campus: arrancás parado en la puerta por la que entraste
+  const miIni: Ubicacion = (() => {
+    const f0 = Object.keys(ed.floors)[0];
+    if (entradaId && ed.floors[f0].points.some((p) => p.id === entradaId)) return { floor: f0, pointId: entradaId };
+    return puntoInicial(ed);
+  })();
+  const [mi, setMi] = useState<Ubicacion>(miIni);
   const [selId, setSelId] = useState<string | null>(destino?.id ?? null);
-  const [ruta, setRuta] = useState<Ruta | null>(null);
+  const [ruta, setRuta] = useState<Ruta | null>(() => {
+    if (!destino || !entradaId || miIni.pointId !== entradaId) return null;
+    const sh = ed.floors[destino.floor].shapes.find((x) => x.id === destino.id);
+    return sh ? calcularRuta(ed, miIni, destino.floor, sh, labelFor(sh.id) || sh.id) : null;
+  });
+  const primerEncuadre = useRef(!!entradaId);
   const [whereOpen, setWhereOpen] = useState(false);
-  const [query, setQuery] = useState('');
+    const [query, setQuery] = useState('');
+    // resultados de OTROS edificios (los de este se resuelven solos en buscar())
+  const otros = useMemo(
+    () => (query.trim() ? buscarEnTodos(query, 10).filter((r) => EDIFICIOS[r.buildingId] !== ed) : []),
+    [query, ed],
+  );
   const [toast, setToast] = useState<string | null>(null);
   const [alturaHoja, setAlturaHoja] = useState(0);
   const progHoja = useRef(new Animated.Value(1)).current; // 1 = ficha abierta, 0 = bajada
@@ -118,6 +137,19 @@ export default function BuildingInterior({ buildingId, onBack, inicial }: Props)
   const piso = ed.floors[floor];
   const viewBox = viewBoxAjustado(piso);
   const [vx, vy, vw, vh] = viewBox.split(' ').map(Number);
+    // tu posición real (GPS) pasada al plano de este edificio
+  const ub = useUbicacion();
+  const puntoGps = useMemo(() => {
+    const mat = TRANSFORMS[buildingId];
+    const pos = ub.punto ? aSvg(ub.punto) : null;
+    if (!mat || !pos) return null;
+    const [a, b, c, d, e, f] = mat;
+    const det = a * d - b * c;
+    const dx = pos.x - e, dy = pos.y - f;
+    const x = (d * dx - c * dy) / det;
+    const y = (-b * dx + a * dy) / det;
+    return x >= vx - 40 && x <= vx + vw + 40 && y >= vy - 40 && y <= vy + vh + 40 ? { x, y } : null;
+  }, [ub.punto, buildingId, vx, vy, vw, vh]);
   const baseH = (mapW * vh) / vw;
   const m = useMapaGestos(zInicial, { viewW: mapW, viewH, baseW: mapW, baseH, min: 1, max: 3 * zb });
   const zoom = m.zoom;
@@ -148,6 +180,17 @@ export default function BuildingInterior({ buildingId, onBack, inicial }: Props)
 
   // al abrir o cambiar de piso: acercar y centrar donde estás parado
   useEffect(() => {
+        // venís de una ruta del campus: se encuadra todo el recorrido de este piso
+    const pts = ruta?.legs?.filter((l) => l.floor === floor).flatMap((l) => l.points) ?? [];
+    if (primerEncuadre.current && pts.length > 1) {
+      primerEncuadre.current = false;
+      const xs = pts.map((p) => p.x), ys = pts.map((p) => p.y);
+      const bx = Math.max(Math.max(...xs) - Math.min(...xs), 1), by = Math.max(Math.max(...ys) - Math.min(...ys), 1);
+      const z = Math.max(1, Math.min(3 * zb, 0.8 * Math.min(vw / bx, ((viewH / baseH) * vh) / by)));
+      const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
+      m.centrarEn(z, ((cx - vx) / vw) * mapW, ((cy - vy) / vh) * baseH);
+      return;
+    }
     const obj = destinoRef.current && destinoRef.current.floor === floor ? piso.shapes.find((x) => x.id === destinoRef.current!.id) : null;
     const p = obj ? { x: obj.cx, y: obj.cy } : mi.floor === floor ? miPunto : piso.points[0] ?? null; // en otro piso: arranca en una escalera
     const px = p ? ((p.x - vx) / vw) * mapW : mapW / 2;
@@ -252,7 +295,12 @@ export default function BuildingInterior({ buildingId, onBack, inicial }: Props)
                 pointerEvents="none"
               />
             ))}
-
+        {puntoGps && (
+          <G pointerEvents="none">
+            <Circle cx={puntoGps.x} cy={puntoGps.y} r={26} fill="#4f8ef7" opacity={0.18} />
+            <Circle cx={puntoGps.x} cy={puntoGps.y} r={11} fill="#2f6fe0" stroke="#ffffff" strokeWidth={3} />
+          </G>
+        )}
         {/* "estás acá" */}
         {puntoEnEstePiso && (
           <G pointerEvents="none">
@@ -310,6 +358,30 @@ export default function BuildingInterior({ buildingId, onBack, inicial }: Props)
             onPress={() => setWhereOpen((o) => !o)}
           />
         </FilaChips>
+                {otros.length > 0 && (
+          <ScrollView
+            style={{ maxHeight: 220, backgroundColor: C.btnBg, borderWidth: 1, borderColor: C.btnBorder, borderRadius: 14, padding: 6, marginRight: 60, elevation: 8 }}
+            keyboardShouldPersistTaps="handled"
+            nestedScrollEnabled
+          >
+            <Text style={s.whereHeader}>En otros edificios</Text>
+            {otros.map((r) => (
+              <Pressable
+                key={r.buildingId + r.floor + r.id}
+                style={s.whereOpt}
+                onPress={() => {
+                  setQuery('');
+                  onIrA?.(r.buildingId, { floor: r.floor, id: r.id });
+                }}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontSize: 13, fontWeight: '600', color: C.text }} numberOfLines={1}>{r.label}</Text>
+                  <Text style={{ fontSize: 11, color: C.dim }}>{r.edificio} · {r.floor}</Text>
+                </View>
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
         {whereOpen && (
           <ScrollView style={s.whereList} nestedScrollEnabled>
             {pisos.map((f) => {
@@ -324,10 +396,16 @@ export default function BuildingInterior({ buildingId, onBack, inicial }: Props)
                       <Pressable
                         key={p.id}
                         style={[s.whereOpt, activo && { backgroundColor: C.elevated }]}
-                        onPress={() => {
-                          setMi({ floor: f, pointId: p.id });
+                                                onPress={() => {
+                          const nuevo = { floor: f, pointId: p.id };
+                          setMi(nuevo);
                           setWhereOpen(false);
-                          elegirPiso(f);
+                          if (forma) {
+                            // hay un lugar elegido: sigue marcado y se recalcula el camino desde la nueva entrada
+                            setRuta(calcularRuta(ed, nuevo, floor, forma, labelFor(forma.id) || forma.id));
+                          } else {
+                            elegirPiso(f);
+                          }
                         }}
                       >
                         <View style={s.dot} />

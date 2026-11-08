@@ -1,4 +1,5 @@
 import * as Location from 'expo-location';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 export type EstadoUbicacion = 'pidiendo' | 'ok' | 'denegado' | 'apagado' | 'error';
@@ -9,6 +10,15 @@ export function useUbicacion(activa = true) {
   const [estado, setEstado] = useState<EstadoUbicacion>('pidiendo');
   const [punto, setPunto] = useState<Punto | null>(null);
   const sub = useRef<Location.LocationSubscription | null>(null);
+  const ultimo = useRef<Punto | null>(null);
+    // solo sigue el GPS mientras esta pantalla se está viendo
+  const [enPantalla, setEnPantalla] = useState(true);
+  useFocusEffect(
+    useCallback(() => {
+      setEnPantalla(true);
+      return () => setEnPantalla(false);
+    }, [])
+  );
 
   const iniciar = useCallback(async () => {
     try {
@@ -23,10 +33,21 @@ export function useUbicacion(activa = true) {
         return;
       }
       sub.current?.remove();
-      sub.current = await Location.watchPositionAsync(
-        { accuracy: Location.Accuracy.Balanced, distanceInterval: 5, timeInterval: 3000 },
+           sub.current = await Location.watchPositionAsync(
+                { accuracy: Location.Accuracy.High, distanceInterval: 3, timeInterval: 2500 },
         (l) => {
-          setPunto({ lat: l.coords.latitude, lng: l.coords.longitude, precision: l.coords.accuracy });
+          const nuevo = { lat: l.coords.latitude, lng: l.coords.longitude, precision: l.coords.accuracy };
+          // descarta lecturas muy imprecisas (salvo la primera) y suaviza los saltitos
+          if (nuevo.precision != null && nuevo.precision > 60 && ultimo.current) return;
+          const ant = ultimo.current;
+          let fin = nuevo;
+          if (ant && distanciaM(ant, nuevo) < 25) {
+            const peso = nuevo.precision != null && ant.precision != null ? ant.precision / (ant.precision + nuevo.precision) : 0.5;
+            fin = { lat: ant.lat + (nuevo.lat - ant.lat) * peso, lng: ant.lng + (nuevo.lng - ant.lng) * peso, precision: nuevo.precision };
+          }
+                    if (ant && distanciaM(ant, fin) < 1.5) return; // no se movió: no redibuja
+          ultimo.current = fin;
+          setPunto(fin);
           setEstado('ok');
         }
       );
@@ -36,13 +57,13 @@ export function useUbicacion(activa = true) {
   }, []);
 
   useEffect(() => {
-    if (!activa) return;
+    if (!activa || !enPantalla) return;
     iniciar();
     return () => {
       sub.current?.remove();
       sub.current = null;
     };
-  }, [activa, iniciar]);
+  }, [activa, enPantalla, iniciar]);
 
   return { estado, punto, reintentar: iniciar };
 }

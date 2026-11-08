@@ -33,9 +33,10 @@ function NotaInput({ inicial, onGuardar, s, C }: { inicial?: number; onGuardar: 
 function Fila({ item, reg, onToque, onNota, s, C }: { item: Item; reg?: Registro; onToque: () => void; onNota: (t: string) => void; s: any; C: Colores }) {
   const aprobada = reg?.estado === 'aprobada';
   const cursando = reg?.estado === 'cursando';
+    const fin = !!reg?.final;
   return (
     <View style={[s.fila, cursando && s.filaCursando, aprobada && s.filaAprobada]}>
-      <Pressable style={[s.filaTap, aprobada && { opacity: 0.5 }]} onPress={onToque}>
+      <Pressable style={[s.filaTap, aprobada && { opacity: 0.5 }]} onPress={fin ? undefined : onToque}>
         <View style={[s.check, cursando && s.checkCursando, aprobada && s.checkAprobada]}>
           <Text style={[s.checkTxt, aprobada && { color: C.onAccent }]}>{aprobada ? '✓' : cursando ? '●' : ''}</Text>
         </View>
@@ -49,7 +50,13 @@ function Fila({ item, reg, onToque, onNota, s, C }: { item: Item; reg?: Registro
         </View>
         {cursando && <Text style={s.tagCursando}>En curso</Text>}
       </Pressable>
-      {aprobada && <NotaInput inicial={reg?.nota} onGuardar={onNota} s={s} C={C} />}
+      {aprobada && !fin && <NotaInput inicial={reg?.nota} onGuardar={onNota} s={s} C={C} />}
+      {fin && (
+        <View style={s.notaBox}>
+          <Text style={s.notaLabel}>Final</Text>
+          <Text style={[s.notaFija, !aprobada && { color: '#b00020' }]}>{reg?.nota}</Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -206,6 +213,7 @@ const makeStyles = (C: Colores) =>
 
     notaBox: { alignItems: 'center', marginLeft: 4 },
     notaLabel: { fontSize: 9.5, color: C.dim },
+        notaFija: { fontSize: 16, fontWeight: '800', color: C.text, minWidth: 36, textAlign: 'center' },
     notaInput: { width: 46, height: 30, textAlign: 'center', fontSize: 14, fontWeight: '700', color: C.text, borderWidth: 1, borderColor: C.border, borderRadius: 8, backgroundColor: C.bg, padding: 0 },
 
     vacio: { marginHorizontal: 18, marginTop: 20, padding: 16, borderRadius: 14, backgroundColor: C.panel2, borderWidth: 1, borderColor: C.border },
